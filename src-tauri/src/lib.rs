@@ -16,9 +16,9 @@ fn counter(count: u32) {
 }
 
 // シリアルポート経由でコマンドを送る関数
-#[tauri::command]
+//#[tauri::command]
 fn send_serial(data: Vec<u8>) -> Result<(), String> {
-    let port_name = "/dev/ttyUSB0"; // portの名前
+    let port_name = "/dev/ttyACM0"; // portの名前
     let baud_rate = 115200; // 通信速度
 
     let settings = SerialPortSettings {
@@ -39,9 +39,10 @@ fn send_serial(data: Vec<u8>) -> Result<(), String> {
 
 // モーターm1を指定速度で回すコマンド
 // 向きを変えることはできない
+#[tauri::command]
 fn drive_forward_m1(speed: u8) -> Vec<u8> {
     // 通信用Roboclawのアドレス
-    const ROBOCLAW_ADDR: i32 = 0x80;
+    const ROBOCLAW_ADDR: u8 = 0x80;
     
     let speed = speed.min(127); // 0~127まで
 
@@ -81,7 +82,7 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, counter])
+        .invoke_handler(tauri::generate_handler![greet, counter, drive_forward_m1])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

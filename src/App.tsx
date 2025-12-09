@@ -23,6 +23,10 @@ function App() {
     setCounterMsg(`Your count is: ${count}`);
   }
 
+  const handleForward = async () => {
+    await invoke("drive_forward_m1", { speed: 100 });
+  }
+
 
   return (
     <main className="container">
@@ -60,6 +64,7 @@ function App() {
       </form>
       <p>{greetMsg}</p>
       <p>{count}</p>
+      <button onClick={handleForward}>Drive M1 Forward</button>
     </main>
   );
 }
