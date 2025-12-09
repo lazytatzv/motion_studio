@@ -37,6 +37,44 @@ fn send_serial(data: Vec<u8>) -> Result<(), String> {
     }
 }
 
+// モーターm1を指定速度で回すコマンド
+// 向きを変えることはできない
+fn drive_forward_m1(speed: u8) -> Vec<u8> {
+    // 通信用Roboclawのアドレス
+    const ROBOCLAW_ADDR: i32 = 0x80;
+    
+    let speed = speed.min(127); // 0~127まで
+
+    // データバッファ
+    let mut data: Vec<u8> = Vec::new();
+
+    data.push(ROBOCLAW_ADDR);
+    data.push(0x00);
+    data.push(speed);
+    
+    let crc = calc_crc(&data);
+    data.push((crc >> 8) as u8); // MSB
+    data.push((crc & 0xFF) as u8); // LSB
+
+    send_serial(data);
+}
+
+// CCITT CRC16計算
+fn calc_crc(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0;
+
+    for &byte in data {
+        crc ^= (byte as u16) << 8;
+        for _ in 0..8 {
+            if crc & 0x8000 != 0 {
+                crc = (crc << 1) ^ 0x1021 // polynomial 0x1021
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    crc
+}
 
 // Invokeする関数はここに書かなければいけない
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
