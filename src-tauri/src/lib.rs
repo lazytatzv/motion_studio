@@ -1,5 +1,4 @@
 // lib.rsにロジックを集約
-use serialport::prelude::*;
 use std::time::Duration;
 use std::io::{self, Write, Read};
 
@@ -21,26 +20,20 @@ fn send_serial(data: Vec<u8>) -> Result<(), String> {
     let port_name = "/dev/ttyACM0"; // portの名前
     let baud_rate = 115200; // 通信速度
 
-    let settings = SerialPortSettings {
-        baud_rate,
-        timeout: Duration::from_millis(100),
-        ..Default::default() 
-        // 残りはデフォルと設定
-    };
+    let mut port = serialport::new(port_name, baud_rate)
+        .timeout(Duration::from_millis(100))
+        .open()
+        .map_err(|e| format!("Failed to open port {}: {}", port_name, e))?;
 
-    match serialport::open_with_settings(port_name, &settings) {
-        Ok(mut port) => {
-            port.write_all(&data).map_err(|e| e.to_string())?;
-            Ok(())
-        }
-        Err(e) => Err(e.to_string()),
-    }
+    port.write_all(&data)
+        .map_err(|e| format!("Failed to write data to {}: {}", port_name, e))?;
+
+    Ok(())
 }
-
 // モーターm1を指定速度で回すコマンド
 // 向きを変えることはできない
 #[tauri::command]
-fn drive_forward_m1(speed: u8) -> Vec<u8> {
+fn drive_forward_m1(speed: u8) {
     // 通信用Roboclawのアドレス
     const ROBOCLAW_ADDR: u8 = 0x80;
     
