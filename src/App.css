@@ -76,6 +76,11 @@ button {
 
 button {
   cursor: pointer;
+  border-radius: 0.5rem;
+  max-width: 150px;
+  min-width: 80px;
+  display: block;
+  margin: 0 auto;
 }
 
 button:hover {

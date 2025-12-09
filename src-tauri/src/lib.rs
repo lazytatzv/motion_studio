@@ -1,11 +1,6 @@
 use std::time::Duration;
 use std::io::Write;
 
-// Tauriコマンド例
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 #[tauri::command]
 fn counter(count: u32) {
@@ -74,7 +69,7 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, counter, drive_forward_m1])
+        .invoke_handler(tauri::generate_handler![counter, drive_forward_m1])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
