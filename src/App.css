@@ -49,17 +49,27 @@
 .motorspeed-input {
   display: flex;
   flex-direction: row;
-  gap: 10px;
+  gap: 50px;
   align-items: center; /* 縦位置をそろえる */
+  justify-content: center;
   /*width: 300px;*/
 }
 
+.motor-container {
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  align-items: center;
+}
 
+/*
 .motor-buttons {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+*/
+
 
 a {
   font-weight: 500;
