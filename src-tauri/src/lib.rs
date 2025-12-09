@@ -2,10 +2,6 @@ use std::time::Duration;
 use std::io::Write;
 
 
-#[tauri::command]
-fn counter(count: u32) {
-    println!("Your current count is: {}", count);
-}
 
 /// シリアルポート経由でデータを送信
 fn send_serial(data: &[u8]) -> Result<(), String> {
@@ -38,6 +34,9 @@ fn send_serial(data: &[u8]) -> Result<(), String> {
 fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     const ROBOCLAW_ADDR: u8 = 0x80;
 
+    // 0 逆転最高速度
+    // 64 ストップ
+    // 127 正回転最高速度
     let speed = speed.min(127);
     //let mut data = vec![ROBOCLAW_ADDR, 0x00, speed];
 
@@ -46,9 +45,9 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     
     data.push(ROBOCLAW_ADDR);
     
-    if motor_index == 1 {
+    if motor_index == 6 {
         data.push(motor_index);
-    } else if motor_index == 2 {
+    } else if motor_index == 7 {
         data.push(motor_index);
     }
 
@@ -82,7 +81,7 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![counter, drive_forward])
+        .invoke_handler(tauri::generate_handler![drive_forward])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
