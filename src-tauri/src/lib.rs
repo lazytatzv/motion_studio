@@ -35,12 +35,25 @@ fn send_serial(data: &[u8]) -> Result<(), String> {
 
 /// モーターM1を前進
 #[tauri::command]
-fn drive_forward_m1(speed: u8) -> Result<(), String> {
+fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     const ROBOCLAW_ADDR: u8 = 0x80;
 
     let speed = speed.min(127);
-    let mut data = vec![ROBOCLAW_ADDR, 0x00, speed];
+    //let mut data = vec![ROBOCLAW_ADDR, 0x00, speed];
 
+    // Data buffer
+    let mut data: Vec<u8> = Vec::new();
+    
+    data.push(ROBOCLAW_ADDR);
+    
+    if motor_index == 1 {
+        data.push(motor_index);
+    } else if motor_index == 2 {
+        data.push(motor_index);
+    }
+
+    data.push(speed);
+    
     let crc = calc_crc(&data);
     data.push((crc >> 8) as u8); // MSB
     data.push((crc & 0xFF) as u8); // LSB
@@ -69,8 +82,9 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![counter, drive_forward_m1])
+        .invoke_handler(tauri::generate_handler![counter, drive_forward])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
 

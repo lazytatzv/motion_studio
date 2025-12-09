@@ -14,9 +14,14 @@ function App() {
     setCounterMsg(`Your count is: ${count}`);
   }
 
-  const handleForward = async () => {
-    await invoke("drive_forward_m1", { speed: 100 });
+  const handleForwardM1 = async () => {
+    await invoke("drive_forward", { speed: 100, motor_index: 1 });
   }
+
+  const handleForwardM2 = async () => {
+    await invoke("drive_forward", { speed: 100, motor_index: 2});
+  }
+
 
 
   return (
@@ -38,7 +43,10 @@ function App() {
         />
       </form>
       <p>{count}</p>
-      <button onClick={handleForward}>Drive M1 Forward</button>
+      <div className="motor_buttons">
+        <button onClick={handleForwardM1}>Drive M1 Forward</button>
+        <button onClick={handleForwardM2}>Drive M2 Forward</button>
+      </div>  
     </main>
   );
 }
