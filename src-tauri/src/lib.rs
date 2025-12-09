@@ -17,19 +17,26 @@ fn send_serial(data: &[u8]) -> Result<(), String> {
     let port_name = "/dev/ttyACM0";
     let baud_rate = 115_200;
 
-    println!("[DEBUG] Sending data: {:?}", data); // バッファ確認
-    
-    let mut port = serialport::new(port_name, baud_rate)
+    println!("[DEBUG] Sending data: {:?}", data);
+
+    match serialport::new(port_name, baud_rate)
         .timeout(Duration::from_millis(100))
         .open()
-        .map_err(|e| format!("Failed to open {}: {}", port_name, e))?;
-
-    port.write_all(data)
-        .map_err(|e| format!("Failed to write data to {}: {}", port_name, e))?;
-
-    println!("[DEBUG] Data sent successfully"); // 成功時の確認
-    Ok(())
+    {
+        Ok(mut port) => {
+            println!("[DEBUG] Serial port {} opened successfully", port_name);
+            port.write_all(data)
+                .map_err(|e| format!("Failed to write data to {}: {}", port_name, e))?;
+            println!("[DEBUG] Data sent successfully");
+            Ok(())
+        }
+        Err(e) => {
+            println!("[DEBUG] Failed to open serial port {}: {}", port_name, e);
+            Err(format!("Failed to open {}: {}", port_name, e))
+        }
+    }
 }
+
 
 /// モーターM1を前進
 #[tauri::command]
