@@ -1,76 +1,68 @@
-// lib.rsにロジックを集約
 use std::time::Duration;
-use std::io::{self, Write, Read};
+use std::io::Write;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+// Tauriコマンド例
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-// Test my function
 #[tauri::command]
 fn counter(count: u32) {
     println!("Your current count is: {}", count);
 }
 
-// シリアルポート経由でコマンドを送る関数
-//#[tauri::command]
-fn send_serial(data: Vec<u8>) -> Result<(), String> {
-    let port_name = "/dev/ttyACM0"; // portの名前
-    let baud_rate = 115200; // 通信速度
+/// シリアルポート経由でデータを送信
+fn send_serial(data: &[u8]) -> Result<(), String> {
+    let port_name = "/dev/ttyACM0";
+    let baud_rate = 115_200;
 
+    println!("[DEBUG] Sending data: {:?}", data); // バッファ確認
+    
     let mut port = serialport::new(port_name, baud_rate)
         .timeout(Duration::from_millis(100))
         .open()
-        .map_err(|e| format!("Failed to open port {}: {}", port_name, e))?;
+        .map_err(|e| format!("Failed to open {}: {}", port_name, e))?;
 
-    port.write_all(&data)
+    port.write_all(data)
         .map_err(|e| format!("Failed to write data to {}: {}", port_name, e))?;
 
+    println!("[DEBUG] Data sent successfully"); // 成功時の確認
     Ok(())
 }
-// モーターm1を指定速度で回すコマンド
-// 向きを変えることはできない
+
+/// モーターM1を前進
 #[tauri::command]
-fn drive_forward_m1(speed: u8) {
-    // 通信用Roboclawのアドレス
+fn drive_forward_m1(speed: u8) -> Result<(), String> {
     const ROBOCLAW_ADDR: u8 = 0x80;
-    
-    let speed = speed.min(127); // 0~127まで
 
-    // データバッファ
-    let mut data: Vec<u8> = Vec::new();
+    let speed = speed.min(127);
+    let mut data = vec![ROBOCLAW_ADDR, 0x00, speed];
 
-    data.push(ROBOCLAW_ADDR);
-    data.push(0x00);
-    data.push(speed);
-    
     let crc = calc_crc(&data);
     data.push((crc >> 8) as u8); // MSB
     data.push((crc & 0xFF) as u8); // LSB
 
-    send_serial(data);
+    send_serial(&data)
 }
 
-// CCITT CRC16計算
+/// CRC16 (CCITT) 計算
 fn calc_crc(data: &[u8]) -> u16 {
     let mut crc: u16 = 0;
 
     for &byte in data {
         crc ^= (byte as u16) << 8;
         for _ in 0..8 {
-            if crc & 0x8000 != 0 {
-                crc = (crc << 1) ^ 0x1021 // polynomial 0x1021
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
             } else {
-                crc <<= 1;
-            }
+                crc << 1
+            };
         }
     }
     crc
 }
 
-// Invokeする関数はここに書かなければいけない
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
