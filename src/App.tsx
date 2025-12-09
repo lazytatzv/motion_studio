@@ -36,28 +36,30 @@ function App() {
   return (
     <main>
       {/* モーターのスピード値を受け付ける */}
-      <div>
-        <label> Enter M1 speed:
+      <div className="motorspeed-input">
+        <div>
+          <label htmlFor="m1"> Enter M1 speed:</label>
           <input
+            id="m1"
             type="number" // text以外にあるのか？
             value={motorSpeedM1}
             onChange={(e) => setMotorSpeedM1(e.target.value === "" ? "" : Number(e.target.value))}
           />
-        </label>
-      </div>
+        </div>
 
-      <div>
-        <label> Enter M2 speed:
+        <div>
+          <label htmlFor="m2"> Enter M2 speed:</label>
           <input
+            id="m2"
             type="number"
             value={motorSpeedM2}
             onChange={(e) => setMotorSpeedM2(e.target.value === "" ? "" : Number(e.target.value))}
           />
-        </label>
+        </div>
       </div>
 
       {/* 駆動用ボタン */}
-      <div className="motor_buttons">
+      <div className="motor-buttons">
         <button onClick={handleForwardM1}>Drive M1</button>
         <button onClick={handleForwardM2}>Drive M2</button>
       </div>  
