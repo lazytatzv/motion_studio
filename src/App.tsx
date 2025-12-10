@@ -27,15 +27,22 @@ function App() {
   // M1 Drive -> ID 6
   // M2 Drive -> ID 7
   const handleForwardM1 = async () => {
-    await invoke("drive_forward", { speed: motorSpeedM1, motor_index: 6 });
+    if (motorSpeedM1 == "") return; //空ならreturn
+
+    await invoke("drive_forward", { speed: motorSpeedM1 as number, motorIndex: 6 });
+    console.log(motorSpeedM1);
   }
 
   const handleForwardM2 = async () => {
-    await invoke("drive_forward", { speed: motorSpeedM2, motor_index: 7 });
+    if (motorSpeedM2 == "") return; 
+
+    await invoke("drive_forward", { speed: motorSpeedM2 as number, motorIndex: 7 });
+    console.log(motorSpeedM2);
   }
 
   const handleBaud = async () => {
     await invoke("configure_baud", { baud_rate: baud });
+    console.log(baud);
   }
 
 
