@@ -1,53 +1,166 @@
 use std::time::Duration;
-use std::io::Write;
+use std::io::{self, Read, Write};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
-
-struct Roboclaw {
+// Roboclawの設定等を保持する構造体
+pub struct Roboclaw {
     addr: u8,
     baud_rate: u32,
+    port_name: String,
+    port: Box<dyn SerialPort>, //一度だけ初期化しなければならない
 }
 
+// いろいろ初期化
 static ROBOCLAW: Lazy<Mutex<Roboclaw>> = Lazy::new(|| {
+    let baud_rate: u32 = 115_200;
+    let port_name: String = String::from("/dev/ttyACM0");
+
+    let port = serialport::new(&port_name, baud_rate)
+        .timeout(Duration::from_millis(100))
+        .open()
+        .expect("Failed to open serial port");
+
     Mutex::new(Roboclaw {
         addr: 0x80,
-        baud_rate: 115200,
+        baud_rate: baud_rate,
+        port_name: port_name,
+        port,
     })
 });
 
-/// シリアルポート経由でデータを送信
-fn send_serial(data: &[u8], roboclaw: &Roboclaw) -> Result<(), String> {
+// Helper function
+fn send_serial_locked(roboclaw: &mut Roboclaw, data: &[u8]) -> Result<(), String> {
+    roboclaw
+        .port
+        .write_all(data)
+        .map_err(|e| e.to_string())
+}
 
-    let port_name = "/dev/ttyACM0";
+// Helper function
+fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<(), String> {
+    let mut buf = [0u8; 1024];
+
+    match roboclaw
+        .port
+        .read(&mut buf) {
+            Ok(n) => Ok(buf[..n].to_vec()),
+            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(Vec::new()),
+            Err(e) => Err(format!("Failed to read: {}", e)),
+        }
+}
+
+// Helper function
+fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
+    //if resp.len() < 3 {}
+    //
+    let data_len = resp.len() - 2;
+    let data = &resp[..data_len];
+
+    let crc_received = ((resp[data_len] as u16) << 8) | resp[data_len + 1] as u16;
+
+    let crc_calc = calc_crc(&resp[..data_len]);
+
+    if crc_calc != crc_received {
+        return Err(format!(
+                "CRC mismatch!"
+        ));
+    }
+    Ok(data)
+}
+
+// これを使う
+// 送るデータだけ渡す
+/*
+ * 使い方
+ * let response = send_and_read(data)?;
+ * if !response.is_empty() {
+ *  match parse_response(&response) {
+ *      Ok(data) => println!("Valid"),
+ *      Err(e) => println!("Error"),
+ *  }
+ * }
+ */
+fn send_and_read(data: &[u8], roboclaw: &Roboclaw) -> Result<Vec<u8>, String> {
+    //let mut roboclaw = ROBOCLAW.lock().unwrap(); // 一回だけlock
+
+    send_serial_locked(&mut roboclaw, data)?;
+    raad_serial_locked(&mut roboclaw)
+}
+
+/// シリアルポート経由でデータを送信
+/// テスト用
+fn send_serial(data: &[u8], roboclaw: &Roboclaw) -> Result<(), String> {
 
     println!("[DEBUG] Sending data: {:?}", data); // ここは出力されてない気がする
 
-    match serialport::new(port_name, roboclaw.baud_rate)
+    match serialport::new(roboclaw.port_name, roboclaw.baud_rate)
         .timeout(Duration::from_millis(100))
         .open()
     {
         Ok(mut port) => {
-            println!("[DEBUG] Serial port {} opened successfully", port_name);
+            println!("[DEBUG] Serial port {} opened successfully", roboclaw.port_name);
             port.write_all(data)
-                .map_err(|e| format!("Failed to write data to {}: {}", port_name, e))?;
+                .map_err(|e| format!("Failed to write data to {}: {}", roboclaw.port_name, e))?;
             println!("[DEBUG] Data sent successfully");
             Ok(())
         }
         Err(e) => {
-            println!("[DEBUG] Failed to open serial port {}: {}", port_name, e);
-            Err(format!("Failed to open {}: {}", port_name, e))
+            println!("[DEBUG] Failed to open serial port {}: {}", roboclaw.port_name, e);
+            Err(format!("Failed to open {}: {}", roboclaw.port_name, e))
         }
     }
+
 }
+
+// シリアル値を読むヘルパー関数
+// 今はとりあえず使わない
+// 無限ループ入るかも
+fn read_serial(roboclaw: &Roboclaw) -> Result<(), String> {
+    
+    match serialport::new(roboclaw.port_name, roboclaw.baud_rate)
+        .timeout(Duration::from_millis(100))
+        .open()
+    {
+        Ok(mut port) => {
+            // Serial buffer to store data
+            let mut serial_buf: Vec<u8> = vec![0u8; 1000];
+
+            loop{
+                match port.read(serial_buf.as_mut_slice()) {
+                    Ok(t) => {
+                        io::stdout().write_all(&serial_buf[..t]).unwrap();
+                        io::stdout().flush().unwrap();
+                    }
+                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
+                    Err(e) => eprintln!("{:?}", e),
+                }
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Failed to open: {}", e);
+            Err("Failed to open")
+        }
+    }
+
+}
+
 
 // baud_rate設定用function
 #[tauri::command]
-fn configure_baud(baud_rate: u32) {
-   println!("[DEBUG] You called the configure_baud function!");
+fn configure_baud(baud_rate: u32) -> Result<(), String> {
    let mut roboclaw = ROBOCLAW.lock().unwrap();
    roboclaw.baud_rate = baud_rate;
+
+   roboclaw.port = serialport::new(&roboclaw.port_name, baud_rate)
+       .timeout(Duration::from_millis(100))
+       .open()
+       .map_err(|e| format!("Failed to Reopen port: {}", e))?;
+
    println!("You set the baud_rate as: {}", baud_rate);
+
+   Ok(())
 }
 
 
@@ -82,7 +195,24 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     data.push((crc >> 8) as u8); // MSB
     data.push((crc & 0xFF) as u8); // LSB
 
-    send_serial(&data, &roboclaw)
+    let response = send_and_read(&data, &roboclaw)?;
+
+    if !response.is_empty() {
+        match parse_response(&response) {
+            Ok(data) => {
+                //println!("Valid Response");
+                let speed: u32 = ((data[0] as u32) << 24) 
+                    | ((data[1] as u32) << 16)
+                    | ((data[2] as u32) << 8)
+                    | ((data[3] as u32))
+            }
+            Err(e) => {
+                println!("Invalid Response");
+            }
+        }
+    }
+    
+
 }
 
 #[tauri::command]
