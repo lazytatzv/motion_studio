@@ -1,16 +1,31 @@
 use std::time::Duration;
 use std::io::Write;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 
 
+struct Roboclaw {
+    addr: u8,
+    baud_rate: u32,
+}
+
+static ROBOCLAW: Lazy<Mutex<Roboclaw>> = Lazy::new(|| {
+    Mutex::new(Roboclaw {
+        addr: 0x80,
+        baud_rate: 115200,
+    })
+});
 
 /// シリアルポート経由でデータを送信
 fn send_serial(data: &[u8]) -> Result<(), String> {
+    let mut roboclaw = ROBOCLAW.lock().unwrap();
+
     let port_name = "/dev/ttyACM0";
-    let baud_rate = 115_200;
+    // = 115_200;
 
     println!("[DEBUG] Sending data: {:?}", data);
 
-    match serialport::new(port_name, baud_rate)
+    match serialport::new(port_name, roboclaw.baud_rate)
         .timeout(Duration::from_millis(100))
         .open()
     {
@@ -28,11 +43,18 @@ fn send_serial(data: &[u8]) -> Result<(), String> {
     }
 }
 
+// baud_rate設定用function
+#[tauri::command]
+fn configure_baud(baud_rate: u32) {
+   let mut roboclaw = ROBOCLAW.lock().unwrap();
+   roboclaw.baud_rate = baud_rate;
+}
+
 
 /// モーターM1を前進
 #[tauri::command]
 fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
-    const ROBOCLAW_ADDR: u8 = 0x80;
+    let mut roboclaw = ROBOCLAW.lock().unwrap();
 
     // 0 逆転最高速度
     // 64 ストップ
@@ -43,7 +65,7 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     // Data buffer
     let mut data: Vec<u8> = Vec::new();
     
-    data.push(ROBOCLAW_ADDR);
+    data.push(roboclaw.addr);
     
     if motor_index == 6 {
         data.push(motor_index);
@@ -81,7 +103,7 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![drive_forward])
+        .invoke_handler(tauri::generate_handler![drive_forward, configure_baud])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

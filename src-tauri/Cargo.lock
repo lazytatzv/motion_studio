@@ -2011,6 +2011,7 @@ dependencies = [
 name = "motion_studio"
 version = "0.1.0"
 dependencies = [
+ "once_cell",
  "serde",
  "serde_json",
  "serialport",

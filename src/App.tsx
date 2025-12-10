@@ -11,6 +11,9 @@ function App() {
   const [motorSpeedM1, setMotorSpeedM1] = useState<number | "">("");
   const [motorSpeedM2, setMotorSpeedM2] = useState<number | "">("");
 
+  // ボーレート
+  const [baud, setBaud] = useState<number | "">("");
+
 
   /*
   async function showCounter() {
@@ -31,6 +34,9 @@ function App() {
     await invoke("drive_forward", { speed: motorSpeedM2, motor_index: 7 });
   }
 
+  const handleBaud = async () => {
+    await invoke("configure_baud", { baud_rate: baud });
+  }
 
 
   return (
@@ -39,7 +45,7 @@ function App() {
       <div className="motorspeed-input">
         <div className="motor-container">
           <div>
-            <label htmlFor="m1"> Enter M1 speed:</label>
+            <label htmlFor="m1">M1 speed:</label>
             <input
               id="m1"
               type="number" // text以外にあるのか？
@@ -52,7 +58,7 @@ function App() {
 
         <div className="motor-container">
           <div>
-            <label htmlFor="m2"> Enter M2 speed:</label>
+            <label htmlFor="m2">M2 speed:</label>
             <input
               id="m2"
               type="number"
@@ -63,13 +69,19 @@ function App() {
           <button onClick={handleForwardM2}>Drive M2</button>
         </div>
       </div>
-        
-      {/*
-      <div className="motor-buttons">
-        <button onClick={handleForwardM1}>Drive M1</button>
-        <button onClick={handleForwardM2}>Drive M2</button>
-      </div>
-      */}
+
+      <div className="baud-container">
+        <div>
+          <label>Baud Rate</label>
+          <input
+            type="number"
+            value={baud}
+            onChange={(e) => setBaud(e.target.value === "" ? "" : Number(e.target.value))}
+          />
+        </div>
+        <button onClick={handleBaud}>Configure</button>
+      </div>  
+
     </main>
   );
 }
