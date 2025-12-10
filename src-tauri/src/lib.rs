@@ -1,7 +1,7 @@
-use std::time::Duration;
+use once_cell::sync::Lazy;
 use std::io::{Read, Write};
 use std::sync::Mutex;
-use once_cell::sync::Lazy;
+use std::time::Duration;
 
 use serialport::SerialPort; // trait??
                             //
@@ -11,48 +11,57 @@ pub struct Roboclaw {
     addr: u8,
     baud_rate: u32,
     port_name: String,
-    port: Box<dyn SerialPort>, //一度だけ初期化しなければならない
-
+    port: Option<Box<dyn SerialPort>>, //一度だけ初期化しなければならない
 }
 
 // いろいろ初期化
-static ROBOCLAW: Lazy<Mutex<Roboclaw>> = Lazy::new(|| {
-    let baud_rate: u32 = 115_200;
-    let port_name: String = String::from("/dev/ttyACM0");
+static ROBOCLAW: Lazy<Mutex<Option<Roboclaw>>> = Lazy::new(|| {
+    let baud_rate = 115_200;
+    let port_name = String::from("/dev/ttyACM0");
 
-    let port = serialport::new(&port_name, baud_rate)
+    let port: Option<Box<dyn SerialPort>> = match serialport::new(&port_name, baud_rate)
         .timeout(Duration::from_millis(100))
         .open()
-        .expect("Failed to open serial port");
+    {
+        Ok(p) => Some(p),
+        Err(e) => {
+            eprintln!("Failed to open serial port {}: {}", port_name, e);
+            None
+        }
+    };
 
-    Mutex::new(Roboclaw {
+    let roboclaw = Roboclaw {
         addr: 0x80,
-        baud_rate: baud_rate,
-        port_name: port_name,
+        baud_rate,
+        port_name,
         port,
-    })
+    };
+
+    Mutex::new(Some(roboclaw))
 });
 
-// Helper function
+// Usage example for sending data
 fn send_serial_locked(roboclaw: &mut Roboclaw, data: &[u8]) -> Result<(), String> {
-    roboclaw
-        .port
-        .write_all(data)
-        .map_err(|e| e.to_string())
+    if let Some(port) = &mut roboclaw.port {
+        port.write_all(data).map_err(|e| e.to_string())
+    } else {
+        Err("Serial port not opened".into())
+    }
 }
 
-// Helper function
-fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<(), String> {
-    let mut buf = [0u8; 1024];
-
-    match roboclaw
-        .port
-        .read(&mut buf) {
-            Ok(n) => Ok(()),
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(()),
+fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
+    if let Some(port) = &mut roboclaw.port {
+        let mut buf = [0u8; 1024];
+        match port.read(&mut buf) {
+            Ok(n) => Ok(buf[..n].to_vec()),
+            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(Vec::new()),
             Err(e) => Err(format!("Failed to read: {}", e)),
         }
+    } else {
+        Ok(Vec::new()) // or Err if you prefer
+    }
 }
+
 
 // Helper function
 fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
@@ -66,9 +75,7 @@ fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
     let crc_calc = calc_crc(&resp[..data_len]);
 
     if crc_calc != crc_received {
-        return Err(format!(
-                "CRC mismatch!"
-        ));
+        return Err(format!("CRC mismatch!"));
     }
     Ok(data)
 }
@@ -85,15 +92,15 @@ fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
  *  }
  * }
  */
-fn send_and_read(data: &[u8], roboclaw: &Roboclaw) -> Result<Vec<u8>, String> {
+fn send_and_read(data: &[u8], roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
     //let mut roboclaw = ROBOCLAW.lock().unwrap(); // 一回だけlock
 
-    send_serial_locked(&mut roboclaw, data)?;
-    read_serial_locked(&mut roboclaw)
+    send_serial_locked(roboclaw, data)?;
+    read_serial_locked(roboclaw)
 }
 
 /// シリアルポート経由でデータを送信
-/// テスト用
+/// テスト
 /*
 fn send_serial(data: &[u8], roboclaw: &Roboclaw) -> Result<(), String> {
 
@@ -122,7 +129,7 @@ fn send_serial(data: &[u8], roboclaw: &Roboclaw) -> Result<(), String> {
 // 今はとりあえず使わない
 // 無限ループ入るかも
 fn read_serial(roboclaw: &Roboclaw) -> Result<(), String> {
-    
+
     match serialport::new(roboclaw.port_name, roboclaw.baud_rate)
         .timeout(Duration::from_millis(100))
         .open()
@@ -151,29 +158,29 @@ fn read_serial(roboclaw: &Roboclaw) -> Result<(), String> {
 
 }
 */
-
 // baud_rate設定用function
 #[tauri::command]
 fn configure_baud(baud_rate: u32) -> Result<(), String> {
-   let mut roboclaw = ROBOCLAW.lock().unwrap();
-   roboclaw.baud_rate = baud_rate;
-
-   roboclaw.port = serialport::new(&roboclaw.port_name, baud_rate)
-       .timeout(Duration::from_millis(100))
-       .open()
-       .map_err(|e| format!("Failed to Reopen port: {}", e))?;
-
-   println!("You set the baud_rate as: {}", baud_rate);
-
-   Ok(())
+    let mut roboclaw_opt = ROBOCLAW.lock().unwrap();
+    if let Some(roboclaw) = roboclaw_opt.as_mut() {
+        roboclaw.baud_rate = baud_rate;
+        roboclaw.port = serialport::new(&roboclaw.port_name, baud_rate)
+            .timeout(Duration::from_millis(100))
+            .open()
+            .map(Some)
+            .map_err(|e| format!("Failed to reopen port: {}", e))?;
+        println!("Baud rate set to {}", baud_rate);
+        Ok(())
+    } else {
+        Err("Serial port not initialized".into())
+    }
 }
-
 
 /// モーターM1を前進
 //#[tauri::command]
 fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
-
-    let roboclaw = ROBOCLAW.lock().unwrap();
+    let mut guard = ROBOCLAW.lock().unwrap();
+    let mut roboclaw = guard.as_mut().ok_or("Roboclaw not initialized")?;
 
     // 0 逆転最高速度
     // 64 ストップ
@@ -183,9 +190,9 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
 
     // Data buffer
     let mut data: Vec<u8> = Vec::new();
-    
+
     data.push(roboclaw.addr);
-    
+
     // Drive M1 -> 6
     // Drive M2 -> 7
     if motor_index == 1 {
@@ -195,38 +202,38 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     }
 
     data.push(speed);
-    
+
     let crc = calc_crc(&data);
     data.push((crc >> 8) as u8); // MSB
     data.push((crc & 0xFF) as u8); // LSB
 
-    let response = send_and_read(&data, &roboclaw)?;
+    let response = send_and_read(&data, &mut roboclaw)?;
 
     if !response.is_empty() {
         match parse_response(&response) {
             Ok(data) => {
                 //println!("Valid Response");
-                let speed: u32 = ((data[0] as u32) << 24) 
+                let _speed: u32 = ((data[0] as u32) << 24)
                     | ((data[1] as u32) << 16)
                     | ((data[2] as u32) << 8)
-                    | ((data[3] as u32));
+                    | (data[3] as u32);
                 Ok(())
             }
             Err(e) => {
                 println!("Invalid Response");
-                Err(())
+                Err(e)
             }
         }
+    } else {
+        Ok(())
     }
-    
-
 }
 
 #[tauri::command]
 async fn drive_forward_async(speed: u8, motor_index: u8) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        drive_forward(speed, motor_index)
-    }).await.map_err(|e| format!("Thread join error: {:?}", e))?
+    tauri::async_runtime::spawn_blocking(move || drive_forward(speed, motor_index))
+        .await
+        .map_err(|e| format!("Thread join error: {:?}", e))?
 }
 
 /// CRC16 (CCITT) 計算
@@ -250,9 +257,10 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![drive_forward_async, configure_baud])
+        .invoke_handler(tauri::generate_handler![
+            drive_forward_async,
+            configure_baud
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-
