@@ -65,9 +65,12 @@ fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
 
 // Helper function
 fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
-    //if resp.len() < 3 {}
-    //
-    let data_len = resp.len() - 2;
+    if resp.len() < 3 {
+        return Ok(&[]);
+    }
+
+
+    let data_len = resp.len() - 2; 
     let data = &resp[..data_len];
 
     let crc_received = ((resp[data_len] as u16) << 8) | resp[data_len + 1] as u16;
