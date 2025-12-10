@@ -210,11 +210,11 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
                     | ((data[1] as u32) << 16)
                     | ((data[2] as u32) << 8)
                     | ((data[3] as u32));
-                ()
+                Ok(())
             }
             Err(e) => {
                 println!("Invalid Response");
-                ()
+                Err(())
             }
         }
     }
