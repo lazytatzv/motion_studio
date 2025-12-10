@@ -30,19 +30,21 @@ function App() {
     if (motorSpeedM1 == "") return; //空ならreturn
 
     await invoke("drive_forward_async", { speed: motorSpeedM1 as number, motorIndex: 6 });
-    console.log(motorSpeedM1);
+    //console.log(motorSpeedM1);
   }
 
   const handleForwardM2 = async () => {
     if (motorSpeedM2 == "") return; 
 
     await invoke("drive_forward_async", { speed: motorSpeedM2 as number, motorIndex: 7 });
-    console.log(motorSpeedM2);
+    //console.log(motorSpeedM2);
   }
 
   const handleBaud = async () => {
-    await invoke("configure_baud", { baud_rate: baud });
-    console.log(baud);
+    if (baud == "") return;
+
+    await invoke("configure_baud", { baudRate: baud });
+    //console.log(baud);
   }
 
 
