@@ -102,65 +102,7 @@ fn send_and_read(data: &[u8], roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String
     read_serial_locked(roboclaw)
 }
 
-/// シリアルポート経由でデータを送信
-/// テスト
-/*
-fn send_serial(data: &[u8], roboclaw: &Roboclaw) -> Result<(), String> {
 
-    println!("[DEBUG] Sending data: {:?}", data); // ここは出力されてない気がする
-
-    match serialport::new(roboclaw.port_name, roboclaw.baud_rate)
-        .timeout(Duration::from_millis(100))
-        .open()
-    {
-        Ok(mut port) => {
-            println!("[DEBUG] Serial port {} opened successfully", roboclaw.port_name);
-            port.write_all(data)
-                .map_err(|e| format!("Failed to write data to {}: {}", roboclaw.port_name, e))?;
-            println!("[DEBUG] Data sent successfully");
-            Ok(())
-        }
-        Err(e) => {
-            println!("[DEBUG] Failed to open serial port {}: {}", roboclaw.port_name, e);
-            Err(format!("Failed to open {}: {}", roboclaw.port_name, e))
-        }
-    }
-
-}
-
-// シリアル値を読むヘルパー関数
-// 今はとりあえず使わない
-// 無限ループ入るかも
-fn read_serial(roboclaw: &Roboclaw) -> Result<(), String> {
-
-    match serialport::new(roboclaw.port_name, roboclaw.baud_rate)
-        .timeout(Duration::from_millis(100))
-        .open()
-    {
-        Ok(mut port) => {
-            // Serial buffer to store data
-            let mut serial_buf: Vec<u8> = vec![0u8; 1000];
-
-            loop{
-                match port.read(serial_buf.as_mut_slice()) {
-                    Ok(t) => {
-                        io::stdout().write_all(&serial_buf[..t]).unwrap();
-                        io::stdout().flush().unwrap();
-                    }
-                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-                    Err(e) => eprintln!("{:?}", e),
-                }
-            }
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Failed to open: {}", e);
-            Err("Failed to open")
-        }
-    }
-
-}
-*/
 // baud_rate設定用function
 #[tauri::command]
 fn configure_baud(baud_rate: u32) -> Result<(), String> {
