@@ -18,12 +18,13 @@ static ROBOCLAW: Lazy<Mutex<Roboclaw>> = Lazy::new(|| {
 
 /// シリアルポート経由でデータを送信
 fn send_serial(data: &[u8]) -> Result<(), String> {
-    let mut roboclaw = ROBOCLAW.lock().unwrap();
+    //println!("関数呼ばれてるか確認");//ここも一回だけ通る
+    let mut roboclaw = ROBOCLAW.lock().unwrap(); // デッドロック！！！！！！！！！！
 
     let port_name = "/dev/ttyACM0";
     // = 115_200;
 
-    println!("[DEBUG] Sending data: {:?}", data);
+    println!("[DEBUG] Sending data: {:?}", data); // ここは出力されてない気がする
 
     match serialport::new(port_name, roboclaw.baud_rate)
         .timeout(Duration::from_millis(100))
@@ -54,6 +55,8 @@ fn configure_baud(baud_rate: u32) {
 /// モーターM1を前進
 //#[tauri::command]
 fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
+    //println!("TEST!!"); // ここではちゃんと毎回出力される
+
     let mut roboclaw = ROBOCLAW.lock().unwrap();
 
     // 0 逆転最高速度
@@ -79,6 +82,8 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     data.push((crc >> 8) as u8); // MSB
     data.push((crc & 0xFF) as u8); // LSB
 
+    //eprintln!("{:?}", data); //ここは一回だけ出力される
+    //std::io::stderr().flush().unwrap();
     send_serial(&data)
 }
 
