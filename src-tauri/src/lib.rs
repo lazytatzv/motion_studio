@@ -1,5 +1,5 @@
 use std::time::Duration;
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
@@ -48,8 +48,8 @@ fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<(), String> {
     match roboclaw
         .port
         .read(&mut buf) {
-            Ok(n) => Ok(buf[..n].to_vec()),
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(Vec::new()),
+            Ok(n) => Ok(()),
+            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(()),
             Err(e) => Err(format!("Failed to read: {}", e)),
         }
 }
@@ -94,6 +94,7 @@ fn send_and_read(data: &[u8], roboclaw: &Roboclaw) -> Result<Vec<u8>, String> {
 
 /// シリアルポート経由でデータを送信
 /// テスト用
+/*
 fn send_serial(data: &[u8], roboclaw: &Roboclaw) -> Result<(), String> {
 
     println!("[DEBUG] Sending data: {:?}", data); // ここは出力されてない気がする
@@ -149,7 +150,7 @@ fn read_serial(roboclaw: &Roboclaw) -> Result<(), String> {
     }
 
 }
-
+*/
 
 // baud_rate設定用function
 #[tauri::command]
@@ -209,9 +210,11 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
                     | ((data[1] as u32) << 16)
                     | ((data[2] as u32) << 8)
                     | ((data[3] as u32));
+                ()
             }
             Err(e) => {
                 println!("Invalid Response");
+                ()
             }
         }
     }
