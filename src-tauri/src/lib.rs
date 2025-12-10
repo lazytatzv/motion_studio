@@ -8,7 +8,7 @@ pub struct Roboclaw {
     addr: u8,
     baud_rate: u32,
     port_name: String,
-    port: Box<dyn SerialPort>, //一度だけ初期化しなければならない
+    port: Box<dyn serialport>, //一度だけ初期化しなければならない
 }
 
 // いろいろ初期化
@@ -85,7 +85,7 @@ fn send_and_read(data: &[u8], roboclaw: &Roboclaw) -> Result<Vec<u8>, String> {
     //let mut roboclaw = ROBOCLAW.lock().unwrap(); // 一回だけlock
 
     send_serial_locked(&mut roboclaw, data)?;
-    raad_serial_locked(&mut roboclaw)
+    read_serial_locked(&mut roboclaw)
 }
 
 /// シリアルポート経由でデータを送信
@@ -204,7 +204,7 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
                 let speed: u32 = ((data[0] as u32) << 24) 
                     | ((data[1] as u32) << 16)
                     | ((data[2] as u32) << 8)
-                    | ((data[3] as u32))
+                    | ((data[3] as u32));
             }
             Err(e) => {
                 println!("Invalid Response");
