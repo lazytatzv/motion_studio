@@ -14,6 +14,9 @@ function App() {
   // ボーレート
   const [baud, setBaud] = useState<number | "">("");
 
+  // コマンドで取得した現在のモーターの速度
+  const [velM1, setVelM1] = useState<number>(0);
+  const [velM2, setVelM2] = useState<number>(0);
 
   /*
   async function showCounter() {
@@ -29,14 +32,14 @@ function App() {
   const handleForwardM1 = async () => {
     if (motorSpeedM1 == "") return; //空ならreturn
 
-    await invoke("drive_forward_async", { speed: motorSpeedM1 as number, motorIndex: 6 });
+    await invoke("drive_forward_async", { speed: motorSpeedM1 as number, motorIndex: 1 });
     //console.log(motorSpeedM1);
   }
 
   const handleForwardM2 = async () => {
     if (motorSpeedM2 == "") return; 
 
-    await invoke("drive_forward_async", { speed: motorSpeedM2 as number, motorIndex: 7 });
+    await invoke("drive_forward_async", { speed: motorSpeedM2 as number, motorIndex: 2 });
     //console.log(motorSpeedM2);
   }
 
@@ -89,7 +92,13 @@ function App() {
           />
         </div>
         <button onClick={handleBaud}>Configure</button>
-      </div>  
+      </div> 
+      
+      {/* Showing Motors' speed*/}
+      <div className="current-vel">
+        M1 Velocity: {velM1}<br/>
+        M2 Velocity: {velM2}
+      </div>
 
     </main>
   );

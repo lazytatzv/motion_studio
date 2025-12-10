@@ -68,10 +68,12 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     
     data.push(roboclaw.addr);
     
-    if motor_index == 6 {
-        data.push(motor_index);
-    } else if motor_index == 7 {
-        data.push(motor_index);
+    // Drive M1 -> 6
+    // Drive M2 -> 7
+    if motor_index == 1 {
+        data.push(6);
+    } else if motor_index == 2 {
+        data.push(7);
     }
 
     data.push(speed);
