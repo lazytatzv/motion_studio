@@ -3,12 +3,16 @@ use std::io::{self, Read, Write};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
+use serialport::SerialPort; // trait??
+                            //
+
 // Roboclawの設定等を保持する構造体
 pub struct Roboclaw {
     addr: u8,
     baud_rate: u32,
     port_name: String,
-    port: Box<dyn serialport>, //一度だけ初期化しなければならない
+    port: Box<dyn SerialPort>, //一度だけ初期化しなければならない
+
 }
 
 // いろいろ初期化
