@@ -29,14 +29,14 @@ function App() {
   const handleForwardM1 = async () => {
     if (motorSpeedM1 == "") return; //空ならreturn
 
-    await invoke("drive_forward", { speed: motorSpeedM1 as number, motorIndex: 6 });
+    await invoke("drive_forward_async", { speed: motorSpeedM1 as number, motorIndex: 6 });
     console.log(motorSpeedM1);
   }
 
   const handleForwardM2 = async () => {
     if (motorSpeedM2 == "") return; 
 
-    await invoke("drive_forward", { speed: motorSpeedM2 as number, motorIndex: 7 });
+    await invoke("drive_forward_async", { speed: motorSpeedM2 as number, motorIndex: 7 });
     console.log(motorSpeedM2);
   }
 

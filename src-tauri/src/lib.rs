@@ -52,7 +52,7 @@ fn configure_baud(baud_rate: u32) {
 
 
 /// モーターM1を前進
-#[tauri::command]
+//#[tauri::command]
 fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     let mut roboclaw = ROBOCLAW.lock().unwrap();
 
@@ -82,6 +82,13 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     send_serial(&data)
 }
 
+#[tauri::command]
+async fn drive_forward_async(speed: u8, motor_index: u8) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        drive_forward(speed, motor_index)
+    }).await.map_err(|e| format!("Thread join error: {:?}", e))?
+}
+
 /// CRC16 (CCITT) 計算
 fn calc_crc(data: &[u8]) -> u16 {
     let mut crc: u16 = 0;
@@ -103,7 +110,7 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![drive_forward, configure_baud])
+        .invoke_handler(tauri::generate_handler![drive_forward_async, configure_baud])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
