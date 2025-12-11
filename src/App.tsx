@@ -78,6 +78,10 @@ function App() {
     }
   }
 
+  const handleResetEncoder = async () => {
+    await invoke("reset_encoder_async");
+  }
+
   // モーターのスピードをエンコーダから取得し、表示
   // Rust側で処理するべきかもしれない..
   
@@ -207,6 +211,7 @@ function App() {
           <div className="vel-value">{velM2}</div>
           <div className="vel-unit">units/s</div>
         </div>
+	<button onChange={handleResetEncoder}>Reset Encoder</button>
       </div>
       
       {/* working in progress */}
