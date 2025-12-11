@@ -63,7 +63,7 @@ fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
 }
 
 // Helper function
-// ReceiveにCRCが含まれている場合しか使わない！
+// ReceiveにデータとCRCが含まれている場合しか使わない！
 fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
     if resp.len() < 3 {
         return Ok(&[]);
@@ -119,7 +119,8 @@ fn configure_baud(baud_rate: u32) -> Result<(), String> {
     }
 }
 
-/// モーターM1を前進
+// エンコーダ等は使わない単純な速度指定でモーターを回す関数
+// あとで関数名は適切に変更する=================================================
 //#[tauri::command]
 fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     let mut guard = ROBOCLAW.lock().unwrap();
