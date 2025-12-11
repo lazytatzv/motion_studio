@@ -56,12 +56,12 @@ function App() {
   useEffect(() => {
 	const interval = setInterval(async () => {
 		try {
-			const { speed } = await invoke("read_speed_async", { motorIndex: 1}) as { speed: number, status: number};
+			const [speed] = await invoke("read_speed_async", { motorIndex: 1}) as [number, number];
 			setVelM1(speed);
 		} catch {}
 		try {
-			//const { speed } = await invoke("read_speed_async", { motorIndex: 2}) as { speed: number, status: number};
-			//setVelM2(speed);
+			const [speed] = await invoke("read_speed_async", { motorIndex: 2}) as [number, number];
+			setVelM2(speed);
 		} catch {}
 	}, 300);
 
@@ -114,8 +114,16 @@ function App() {
       
       {/* Showing Motors' speed*/}
       <div className="current-vel">
-        M1 Velocity: {velM1}<br/>
-        M2 Velocity: {velM2}
+        <div className="vel-card">
+          <div className="vel-label">M1</div>
+          <div className="vel-value">{velM1}</div>
+          <div className="vel-unit">units/s</div>
+        </div>
+        <div className="vel-card">
+          <div className="vel-label">M2</div>
+          <div className="vel-value">{velM2}</div>
+          <div className="vel-unit">units/s</div>
+        </div>
       </div>
 
     </main>

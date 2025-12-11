@@ -86,13 +86,43 @@
   /*padding*/
 }
 
-/* これ必要かはわからん */
+/* Velocity display */
 .current-vel {
   display: flex;
+  flex-direction: row;
+  gap: 40px;
   justify-content: center;
   align-items: center;
-  margin-top: 10px;
-  /*text-align: center;*/
+  margin-top: 40px;
+}
+
+.vel-card {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 24px;
+  background: #000;
+  border-radius: 8px;
+  min-width: 160px;
+}
+
+.vel-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.vel-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'Courier New', monospace;
+}
+
+.vel-unit {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 /*

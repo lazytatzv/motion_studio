@@ -108,8 +108,8 @@ fn parse_response(resp: &[u8], addr: u8, cmd: u8) -> Result<&[u8], String> {
     let crc_calc = calc_crc(&full_packet);
 
     if crc_calc != crc_received {
-        println!("[DEBUG] crc calculated: {:?}", crc_calc);
-        println!("[DEBUG] crc received: {:?}", crc_received);
+        // println!("[DEBUG] crc calculated: {:?}", crc_calc);
+        //println!("[DEBUG] crc received: {:?}", crc_received);
         return Err(format!("CRC mismatch!"));
     }
     Ok(data)
@@ -240,7 +240,7 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
         return Err("The response is empty".to_string()); 
     }
 
-    println!("[DEBUG] res in read_speed(): {:?}", response);
+    // println!("[DEBUG] res in read_speed(): {:?}", response);
 
     // データが存在したら
     let cmd = if motor_index == 1 { 18 } else { 19 };
@@ -265,7 +265,7 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
 
     let (speed, status) = result;
     
-    // println!("[DEBUG] speed {:?}", speed);
+    println!("[DEBUG] speed {:?}", speed);
 
     Ok((speed, status))
 
@@ -277,6 +277,65 @@ async fn read_speed_async(motor_index: u8) -> Result<(u32, u8), String> {
         .await
         .map_err(|e| format!("Thread join error: {:?}", e))?
 }
+
+fn read_motor_currents() -> Result<(u32, u32), String> {
+    let mut guard = ROBOCLAW.lock().unwrap();
+    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
+
+    let cmd = 49;
+
+    // Data buffer
+    let mut data: Vec<u8> = Vec::new();
+
+    data.push(roboclaw.addr);
+    data.push(cmd);
+
+    let crc = calc_crc(&data);
+
+    let msb: u8 = (crc >> 8) as u8;
+    let lsb: u8 = (crc & 0xFF) as u8;
+
+    data.push(msb);
+    data.push(lsb);
+
+    let response = send_and_read(&data, &mut roboclaw)?;
+
+    if response.is_empty() {
+        return Err("Data is empty".into());
+    }
+
+    let result = match parse_response(&response, roboclaw.addr, cmd) {
+        Ok(data) => {
+            let m1_current = ((data[0] as u32) << 8)
+                | (data[1] as u32);
+
+            let m2_current = ((data[2] as u32) << 8)
+                | (data[3] as u32);
+
+            (m1_current, m2_current)
+        }
+        Err(e) => {
+            // eprintln!("Failed to parse".into());
+            return Err("Failed to parse".into());
+        }
+
+    };
+
+    let (m1_current, m2_current) = result;
+
+    println!("[DEBUG] m1_current: {:?}", m1_current);
+
+    Ok((m1_current, m2_current))
+
+}
+
+#[tauri::command]
+async fn read_motor_currents_async() -> Result<(u32, u32), String> {
+    tauri::async_runtime::spawn_blocking(move || read_motor_currents())
+        .await
+        .map_err(|e| format!("Failed to join{:?}", e))?
+} 
+
 
 /// CRC16 (CCITT) 計算
 fn calc_crc(data: &[u8]) -> u16 {
@@ -304,6 +363,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             drive_simply_async,
             read_speed_async,
+            read_motor_currents_async,
             configure_baud,
         ])
         .run(tauri::generate_context!())
