@@ -334,7 +334,52 @@ async fn read_motor_currents_async() -> Result<(u32, u32), String> {
     tauri::async_runtime::spawn_blocking(move || read_motor_currents())
         .await
         .map_err(|e| format!("Failed to join{:?}", e))?
-} 
+}
+
+fn read_pwm_values() -> Result<(u32, u32), String> {
+    
+    let mut guard = ROBOCLAW.lock().unwrap();
+    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
+
+    let cmd = 49;
+    let mut data: Vec<u8> = Vec::new();
+
+    data.push(roboclaw.addr);
+    data.push(cmd);
+
+    let response = send_and_read(&data, &mut roboclaw)?;
+
+    if response.is_empty() {
+        return Err("Empty response".into());
+    }
+
+    let result = match parse_response(&response, roboclaw.addr, cmd) {
+        Ok(data) => {
+            let m1_pwm = ((data[0] as u32) << 8)
+                | (data[1] as u32);
+
+            let m2_pwm = ((data[2] as u32) << 8)
+                | (data[3] as u32);
+
+            (m1_pwm, m2_pwm)
+        }
+        Err(e) => {
+            return Err(format!("Failed to parse: {:?}", e));
+        }
+    };
+
+    let (m1_pwm, m2_pwm) = result;
+
+    Ok((m1_pwm, m2_pwm))
+
+}
+
+#[tauri::command]
+async fn read_pwm_values_async() -> Result<(u32, u32), String> {
+    tauri::async_runtime::spawn_blocking(|| read_pwm_values())
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
+}
 
 
 /// CRC16 (CCITT) 計算
@@ -364,6 +409,7 @@ pub fn run() {
             drive_simply_async,
             read_speed_async,
             read_motor_currents_async,
+            read_pwm_values_async,
             configure_baud,
         ])
         .run(tauri::generate_context!())

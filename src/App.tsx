@@ -21,6 +21,10 @@ function App() {
   // Current value
   const [currentM1, setCurrentM1] = useState<number>(0);
   const [currentM2, setCurrentM2] = useState<number>(0);
+
+  // Current motor pwm
+  const [pwmM1, setPwmM1] = useState<number>(0);
+  const [pwmM2, setPwmM2] = useState<number>(0);
   
 
   // モータ駆動用。Rust関数をinvokeし、裏でシリアル送って回す
@@ -146,6 +150,13 @@ function App() {
 	  <div className="current-label">M2</div>
 	  <div className="current-value">{currentM2}</div>
 	  <div className="current-unit">mA</div>
+	</div>
+      </div>
+
+      <div className="current-pwm">
+	<div className="pwm-card">
+	  <div className="pwm-label">M1</div>
+	  <div className="pwm-value">{pwmM1}</div>
 	</div>
       </div>
 

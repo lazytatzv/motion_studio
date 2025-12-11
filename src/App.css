@@ -193,6 +193,39 @@ main {
   font-weight: 500;
 }
 
+/* Pwm display */
+.current-pwm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+
+.pwm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 1.5rem;
+  background: #000000;
+  border: 2px solid #ffffff;
+
+}
+
+.pwm-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.pwm-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'Inter', monospace;
+  line-height: 1;
+}
 
 /* Input and Button Styles */
 input {
