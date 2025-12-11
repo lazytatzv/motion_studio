@@ -336,7 +336,7 @@ async fn read_motor_currents_async() -> Result<(u32, u32), String> {
         .map_err(|e| format!("Failed to join{:?}", e))?
 }
 
-fn read_pwm_values() -> Result<(u32, u32), String> {
+fn read_pwm_values() -> Result<(i32, i32), String> {
     
     let mut guard = ROBOCLAW.lock().unwrap();
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
@@ -359,13 +359,28 @@ fn read_pwm_values() -> Result<(u32, u32), String> {
 
     let result = match parse_response(&response, roboclaw.addr, cmd) {
         Ok(data) => {
-            let m1_pwm = ((data[0] as u32) << 8)
-                | (data[1] as u32);
+            println!("[DEBUG] Read PWM - Raw bytes: {:?}", data);
+            
+            // Parse as signed 16-bit integers (big-endian)
+            let m1_pwm_raw = ((data[0] as u16) << 8) | (data[1] as u16);
+            let m2_pwm_raw = ((data[2] as u16) << 8) | (data[3] as u16);
+            
+            let m1_pwm_signed = m1_pwm_raw as i16;
+            let m2_pwm_signed = m2_pwm_raw as i16;
+            
+            println!("[DEBUG] M1 PWM: raw_u16={}, signed_i16={}, bytes=[{:#04x}, {:#04x}]", 
+                     m1_pwm_raw, m1_pwm_signed, data[0], data[1]);
+            println!("[DEBUG] M2 PWM: raw_u16={}, signed_i16={}, bytes=[{:#04x}, {:#04x}]", 
+                     m2_pwm_raw, m2_pwm_signed, data[2], data[3]);
+            
+            let m1_duty_cycle = (m1_pwm_signed as f64) / 327.67;
+            let m2_duty_cycle = (m2_pwm_signed as f64) / 327.67;
+            
+            println!("[DEBUG] M1 duty cycle: {:.2}%, M2 duty cycle: {:.2}%", 
+                     m1_duty_cycle, m2_duty_cycle);
 
-            let m2_pwm = ((data[2] as u32) << 8)
-                | (data[3] as u32);
-
-            (m1_pwm, m2_pwm)
+            // Return signed values (-32767 to +32767)
+            (m1_pwm_signed as i32, m2_pwm_signed as i32)
         }
         Err(e) => {
             return Err(format!("Failed to parse: {:?}", e));
@@ -379,7 +394,7 @@ fn read_pwm_values() -> Result<(u32, u32), String> {
 }
 
 #[tauri::command]
-async fn read_pwm_values_async() -> Result<(u32, u32), String> {
+async fn read_pwm_values_async() -> Result<(i32, i32), String> {
     tauri::async_runtime::spawn_blocking(|| read_pwm_values())
         .await
         .map_err(|e| format!("Failed to join: {:?}", e))?
