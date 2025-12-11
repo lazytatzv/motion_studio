@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
@@ -49,6 +49,15 @@ function App() {
     await invoke("configure_baud", { baudRate: baud });
     //console.log(baud);
   }
+
+  // モーターのスピードをエンコーダから取得し、表示
+  // Rust側で処理するべきかもしれない..
+  setInterval(async () => {
+    const {speed, status} = await window.__TAURI__.invoke("read_speed_async", { motorIndex: 1 });
+    
+    setVelM1(speed);
+
+  }, 500); // 500msごとに呼ばれる
 
 
   return (
