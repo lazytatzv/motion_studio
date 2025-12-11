@@ -52,6 +52,7 @@ fn send_serial_locked(roboclaw: &mut Roboclaw, data: &[u8]) -> Result<(), String
     }
 }
 
+/*
 fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
     if let Some(port) = &mut roboclaw.port {
         let mut buf = [0u8; 1024];
@@ -64,22 +65,51 @@ fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
         Ok(Vec::new()) // or Err if you prefer
     }
 }
+*/
+
+fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
+    if let Some(port) = &mut roboclaw.port {
+        let mut buf = [0u8; 1024];
+
+        // Read until timeout or actual data
+        match port.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                // Trim strictly to received length
+                Ok(buf[..n].to_vec())
+            }
+            Ok(_) => {
+                // Timeout and no data
+                Err("No data received (timeout)".to_string())
+            }
+            Err(e) => Err(format!("Serial read error: {}", e)),
+        }
+    } else {
+        Err("Serial port not opened".into())
+    }
+}
+
 
 // Helper function
 // ReceiveにデータとCRCが含まれている場合しか使わない！
-fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
+fn parse_response(resp: &[u8], addr: u8, cmd: u8) -> Result<&[u8], String> {
     if resp.len() < 3 {
-        return Ok(&[]);
+        return Err("Response too short".into());
     }
 
     let data_len = resp.len() - 2;
     let data = &resp[..data_len];
 
-    let crc_received = ((resp[data_len] as u16) << 8) | resp[data_len + 1] as u16;
+    // RoboClaw sends CRC as MSB, LSB (big-endian)
+    let crc_received = ((resp[data_len] as u16) << 8) | (resp[data_len + 1] as u16);
 
-    let crc_calc = calc_crc(&resp[..data_len]);
+    // Per RoboClaw manual: CRC is calculated on [Address, Command, Data bytes]
+    let mut full_packet = vec![addr, cmd];
+    full_packet.extend_from_slice(data);
+    let crc_calc = calc_crc(&full_packet);
 
     if crc_calc != crc_received {
+        println!("[DEBUG] crc calculated: {:?}", crc_calc);
+        println!("[DEBUG] crc received: {:?}", crc_received);
         return Err(format!("CRC mismatch!"));
     }
     Ok(data)
@@ -154,7 +184,7 @@ fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
     data.push((crc & 0xFF) as u8); // LSB
     
 
-    //println!("[DEBUG] {:?}", data);
+    // println!("[DEBUG] {:?}", data);
 
     let response = send_and_read(&data, &mut roboclaw)?;
 
@@ -179,6 +209,8 @@ async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
 }
 
 fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
+    // println!("The read_speed is called");
+
     // lockを取得
     let mut guard = ROBOCLAW.lock().unwrap();
     let mut roboclaw = guard.as_mut().ok_or("Roboclaw is not initialized")?;
@@ -196,16 +228,23 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
         data.push(19);
     }
 
+    let crc = calc_crc(&data);
+    data.push((crc >> 8) as u8); // MSB
+    data.push((crc & 0xFF) as u8); // LSB
+
     // シリアルデータ送受信
     let response = send_and_read(&data, &mut roboclaw)?;
 
     // 受け取ったデータが空じゃないか確認する
-    if !response.is_empty() {
+    if response.is_empty() {
         return Err("The response is empty".to_string()); 
     }
 
+    println!("[DEBUG] res in read_speed(): {:?}", response);
+
     // データが存在したら
-    let result = match parse_response(&response) {
+    let cmd = if motor_index == 1 { 18 } else { 19 };
+    let result = match parse_response(&response, roboclaw.addr, cmd) {
         Ok(data) => {
             let speed = ((data[0] as u32) << 24)
                 | ((data[1] as u32) << 16)
@@ -219,11 +258,15 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
 
         }
         Err(e) => {
+            eprintln!("[DEBUG] Failed to parse! {:?}", e);
             return Err("Invalid response".to_string());
         }
     };
 
     let (speed, status) = result;
+    
+    // println!("[DEBUG] speed {:?}", speed);
+
     Ok((speed, status))
 
 }
@@ -237,6 +280,8 @@ async fn read_speed_async(motor_index: u8) -> Result<(u32, u8), String> {
 
 /// CRC16 (CCITT) 計算
 fn calc_crc(data: &[u8]) -> u16 {
+    // println!("[DEBUG] data for calc crc: {:?}", data);
+
     let mut crc: u16 = 0;
 
     for &byte in data {

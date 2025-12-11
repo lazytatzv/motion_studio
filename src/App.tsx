@@ -52,14 +52,22 @@ function App() {
 
   // モーターのスピードをエンコーダから取得し、表示
   // Rust側で処理するべきかもしれない..
-  /*
-  setInterval(async () => {
-    const {speed, status} = await window.__TAURI__.invoke("read_speed_async", { motorIndex: 1 });
-    
-    setVelM1(speed);
+  
+  useEffect(() => {
+	const interval = setInterval(async () => {
+		try {
+			const { speed } = await invoke("read_speed_async", { motorIndex: 1}) as { speed: number, status: number};
+			setVelM1(speed);
+		} catch {}
+		try {
+			//const { speed } = await invoke("read_speed_async", { motorIndex: 2}) as { speed: number, status: number};
+			//setVelM2(speed);
+		} catch {}
+	}, 300);
 
-  }, 500); // 500msごとに呼ばれる
-  */
+	return () => clearInterval(interval);
+  }, []);
+  
 
   return (
     <main>
