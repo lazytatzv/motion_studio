@@ -348,13 +348,7 @@ fn read_motor_currents() -> Result<(u32, u32), String> {
     data.push(roboclaw.addr);
     data.push(cmd);
 
-    let crc = calc_crc(&data);
-
-    let msb: u8 = (crc >> 8) as u8;
-    let lsb: u8 = (crc & 0xFF) as u8;
-
-    data.push(msb);
-    data.push(lsb);
+    // WITHOUT CRC16
 
     let response = send_and_read(&data, &mut roboclaw)?;
 
@@ -405,10 +399,8 @@ fn read_pwm_values() -> Result<(i32, i32), String> {
 
     data.push(roboclaw.addr);
     data.push(cmd);
-    
-    let crc = calc_crc(&data);
-    data.push((crc >> 8) as u8); // MSB
-    data.push((crc & 0xFF) as u8); // LSB
+
+    // WITHOUT CRC!
 
     let response = send_and_read(&data, &mut roboclaw)?;
 
@@ -459,6 +451,9 @@ async fn read_pwm_values_async() -> Result<(i32, i32), String> {
         .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
+fn reset_encoder() {
+
+}
 
 /// CRC16 (CCITT) 計算
 fn calc_crc(data: &[u8]) -> u16 {
