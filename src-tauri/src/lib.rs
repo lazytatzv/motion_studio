@@ -200,7 +200,9 @@ async fn configure_port(port_name: String, baud_rate: Option<u32>) -> Result<(),
 fn list_serial_ports() -> Result<Vec<String>, String> {
     serialport::available_ports()
         .map(|ports| {
-            ports.iter().map(|p| p.port_name.clone()).collect()
+            ports.iter()
+                .filter(|p| p.port_name.contains("ACM"))
+                .map(|p| p.port_name.clone()).collect()
         })
         .map_err(|e| format!("Failed to list ports: {}", e))
 }
