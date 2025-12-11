@@ -162,7 +162,7 @@ fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
     }
 }
 
-
+// ブロッキングだとUIが固まってしまうため
 #[tauri::command]
 async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || drive_simply(speed, motor_index))
@@ -220,6 +220,12 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
 
 }
 
+#[tauri::command]
+async fn read_speed_async(motor_index: u8) -> Result<(u32, u8), String> {
+    tauri::async_runtime::spawn_blocking(move || read_speed(motor_index))
+        .await
+        .map_err(|e| format!("Thread join error: {:?}", e))?
+}
 
 /// CRC16 (CCITT) 計算
 fn calc_crc(data: &[u8]) -> u16 {
@@ -244,7 +250,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             drive_simply_async,
-            configure_baud
+            read_speed_async,
+            configure_baud,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
