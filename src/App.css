@@ -102,7 +102,7 @@
   align-items: baseline;
   gap: 10px;
   padding: 12px 24px;
-  background: #000;
+  background: #000; /* background color */
   border-radius: 8px;
   min-width: 160px;
 }
@@ -114,7 +114,7 @@
 }
 
 .vel-value {
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: #ffffff;
   font-family: 'Courier New', monospace;
@@ -124,6 +124,33 @@
   font-size: 0.875rem;
   color: rgba(255, 255, 255, 0.8);
 }
+
+/* Current display */
+.current-current {
+  display: flex;
+  flex-direction: row;
+  gap: 40px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 30px;
+}
+
+.current-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-width: 150;
+}
+
+.current-label {
+  font-size: 1rem;
+}
+
+/* color and so on*/
+.current-unit {
+  font-size: 0.875rem;
+}
+
 
 /*
 .motor-buttons {

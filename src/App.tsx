@@ -18,13 +18,10 @@ function App() {
   const [velM1, setVelM1] = useState<number>(0);
   const [velM2, setVelM2] = useState<number>(0);
 
-  /*
-  async function showCounter() {
-    increment();
-    await invoke("counter", { count });
-    setCounterMsg(`Your count is: ${count}`);
-  }
-  */
+  // Current value
+  const [currentM1, setCurrentM1] = useState<number>(0);
+  const [currentM2, setCurrentM2] = useState<number>(0);
+  
 
   // モータ駆動用。Rust関数をinvokeし、裏でシリアル送って回す
   // M1 Drive -> ID 6
@@ -62,6 +59,21 @@ function App() {
 		try {
 			const [speed] = await invoke("read_speed_async", { motorIndex: 2}) as [number, number];
 			setVelM2(speed);
+		} catch {}
+	}, 300);
+
+	return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+	const interval = setInterval(async () => {
+		try {
+			const [current] = await invoke("read_motor_currents_async") as [number, number];
+			setCurrentM1(current);
+		} catch {}
+		try {
+			const [current] = await invoke("read_motor_currents_async") as [number, number];
+			setCurrentM2(current);
 		} catch {}
 	}, 300);
 
@@ -124,6 +136,20 @@ function App() {
           <div className="vel-value">{velM2}</div>
           <div className="vel-unit">units/s</div>
         </div>
+      </div>
+      
+      {/* working in progress */}
+      <div className="current-current">
+      	<div className="current-card">
+	  <div className="current-label">M1</div>
+	  <div className="current-value">{currentM1}</div>
+	  <div className="current-unit">mA</div>
+	</div>
+	<div className="current-card">
+	  <div className="current-label">M2</div>
+	  <div className="current-value">{currentM2}</div>
+	  <div className="current-unit">mA</div>
+	</div>
       </div>
 
     </main>
