@@ -325,6 +325,20 @@ button:active {
   background: #333333;
 }
 
+/* Reset Encoder Button */
+.reset-encoder-container {
+  display: flex;
+  justify-content: center;
+  margin: 2rem 0;
+}
+
+.reset-encoder-btn {
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  width: auto;
+  min-width: 200px;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .motorspeed-input,

@@ -211,7 +211,10 @@ function App() {
           <div className="vel-value">{velM2}</div>
           <div className="vel-unit">units/s</div>
         </div>
-	<button onChange={handleResetEncoder}>Reset Encoder</button>
+      </div>
+
+      <div className="reset-encoder-container">
+        <button className="reset-encoder-btn" onClick={handleResetEncoder}>Reset Encoder</button>
       </div>
       
       {/* working in progress */}
