@@ -451,8 +451,46 @@ async fn read_pwm_values_async() -> Result<(i32, i32), String> {
         .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
-fn reset_encoder() {
+fn reset_encoder() -> Result<(), String> {
+ 
+    let mut guard = ROBOCLAW.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
 
+    let cmd = 20;
+
+    let mut data: Vec<u8> = Vec::new();
+
+    data.push(roboclaw.addr);
+    data.push(cmd);
+
+    // With crc16
+    let crc = calc_crc(&data);
+
+    let msb = (crc >> 8) as u8;
+    let lsb = (crc & 0xFF) as u8;
+    
+    // big endian
+    data.push(msb);
+    data.push(lsb);
+
+    let response = send_and_read(&data, &mut roboclaw)?;
+
+    let result = parse_response(&response, roboclaw.addr, cmd)?;
+
+    if result.get(0) == Some(&0xFF) {
+        Ok(()) 
+    } else {
+        Err("Failed to reset encoder".into())
+    }
+
+}
+
+#[tauri::command]
+async fn reset_encoder_async() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| reset_encoder())
+        .await
+        .map_err(|e| format!("Failed to join: {:?}",e))?
 }
 
 /// CRC16 (CCITT) 計算
@@ -483,6 +521,7 @@ pub fn run() {
             read_speed_async,
             read_motor_currents_async,
             read_pwm_values_async,
+            reset_encoder_async,
             configure_baud,
             configure_port,
             list_serial_ports,
