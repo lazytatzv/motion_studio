@@ -121,8 +121,7 @@ fn configure_baud(baud_rate: u32) -> Result<(), String> {
 
 // エンコーダ等は使わない単純な速度指定でモーターを回す関数
 // あとで関数名は適切に変更する=================================================
-//#[tauri::command]
-fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
+fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
     let mut guard = ROBOCLAW.lock().unwrap();
     let mut roboclaw = guard.as_mut().ok_or("Roboclaw not initialized")?;
 
@@ -163,12 +162,64 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
     }
 }
 
+
 #[tauri::command]
-async fn drive_forward_async(speed: u8, motor_index: u8) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || drive_forward(speed, motor_index))
+async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || drive_simply(speed, motor_index))
         .await
         .map_err(|e| format!("Thread join error: {:?}", e))?
 }
+
+fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
+    // lockを取得
+    let mut guard = ROBOCLAW.lock().unwrap();
+    let mut roboclaw = guard.as_mut().ok_or("Roboclaw is not initialized")?;
+
+    // Data buffer
+    let mut data: Vec<u8> = Vec::new();
+
+    data.push(roboclaw.addr);
+
+    // Read Encoder Speed M1 -> 18
+    // Read Encoder Speed M2 -> 19
+    if motor_index == 1 {
+        data.push(18);
+    } else if motor_index == 2 {
+        data.push(19);
+    }
+
+    // シリアルデータ送受信
+    let response = send_and_read(&data, &mut roboclaw)?;
+
+    // 受け取ったデータが空じゃないか確認する
+    if !response.is_empty() {
+        return Err("The response is empty".to_string()); 
+    }
+
+    // データが存在したら
+    let result = match parse_response(&response) {
+        Ok(data) => {
+            let speed = ((data[0] as u32) << 24)
+                | ((data[1] as u32) << 16)
+                | ((data[2] as u32) << 8)
+                | (data[3] as u32);
+
+            let status = data[4];
+         
+            // タプルで返す
+            (speed, status)
+
+        }
+        Err(e) => {
+            return Err("Invalid response".to_string());
+        }
+    };
+
+    let (speed, status) = result;
+    Ok((speed, status))
+
+}
+
 
 /// CRC16 (CCITT) 計算
 fn calc_crc(data: &[u8]) -> u16 {
@@ -192,7 +243,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            drive_forward_async,
+            drive_simply_async,
             configure_baud
         ])
         .run(tauri::generate_context!())

@@ -39,7 +39,7 @@ function App() {
   const handleForwardM2 = async () => {
     if (motorSpeedM2 == "") return; 
 
-    await invoke("drive_forward_async", { speed: motorSpeedM2 as number, motorIndex: 2 });
+    await invoke("drive_simply_async", { speed: motorSpeedM2 as number, motorIndex: 2 });
     //console.log(motorSpeedM2);
   }
 
