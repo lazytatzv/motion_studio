@@ -68,12 +68,9 @@ function App() {
   useEffect(() => {
 	const interval = setInterval(async () => {
 		try {
-			const [current] = await invoke("read_motor_currents_async") as [number, number];
-			setCurrentM1(current);
-		} catch {}
-		try {
-			const [current] = await invoke("read_motor_currents_async") as [number, number];
-			setCurrentM2(current);
+			const [m1_current, m2_current] = await invoke("read_motor_currents_async") as [number, number];
+			setCurrentM1(m1_current);
+			setCurrentM2(m2_current);
 		} catch {}
 	}, 300);
 
