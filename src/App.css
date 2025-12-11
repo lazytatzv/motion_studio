@@ -1,18 +1,14 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  color: #ffffff;
+  background: #000000;
+  min-height: 100vh;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -21,230 +17,231 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
+* {
+  box-sizing: border-box;
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  padding: 0;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
+main {
+  padding: 3rem 2rem;
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-/* モーターの入力を入れたりするらへん */
+/* Motor Control Section */
 .motorspeed-input {
-  display: flex;
-  flex-direction: row;
-  gap: 50px;
-  align-items: center; /* 縦位置をそろえる */
-  justify-content: center;
-  margin-top: 30px;
-  /*width: 300px;*/
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .motor-container {
   display: flex;
-  flex-direction: row;
-  gap: 5px;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  background: #ffffff;
+  border: 2px solid #000000;
+}
+
+.motor-container > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.motor-container label {
+  color: #000000;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .motor-container input {
-  width: 70px;
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: center;
 }
 
 .baud-container {
   display: flex;
-  flex-direction: row;
-  gap: 5px;
-  align-items: center;
-  justify-content: center;
-  margin-top: 30px;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0 auto 2rem;
+  padding: 1.5rem;
+  max-width: 400px;
+  background: #ffffff;
+  border: 2px solid #000000;
+}
+
+.baud-container > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.baud-container label {
+  color: #000000;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
 }
 
 .baud-container input {
-  width: 70px;
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: center;
 }
 
 .baud-container button {
   margin: 0;
-  /*padding*/
+  width: 100%;
 }
 
 /* Velocity display */
 .current-vel {
-  display: flex;
-  flex-direction: row;
-  gap: 40px;
-  justify-content: center;
-  align-items: center;
-  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .vel-card {
   display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  gap: 10px;
-  padding: 12px 24px;
-  background: #000; /* background color */
-  border-radius: 8px;
-  min-width: 160px;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 1.5rem;
+  background: #ffffff;
+  border: 2px solid #000000;
 }
 
 .vel-label {
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #000000;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .vel-value {
-  font-size: 1.5rem;
+  font-size: 2.5rem;
   font-weight: 700;
-  color: #ffffff;
-  font-family: 'Courier New', monospace;
+  color: #000000;
+  font-family: 'Inter', monospace;
+  line-height: 1;
 }
 
 .vel-unit {
-  font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.75rem;
+  color: #666666;
+  font-weight: 500;
 }
 
 /* Current display */
 .current-current {
-  display: flex;
-  flex-direction: row;
-  gap: 40px;
-  justify-content: center;
-  align-items: center;
-  margin-top: 30px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
 }
 
 .current-card {
   display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  gap: 10px;
-  padding: 12px 24px;
-  background: #1a472a;
-  border-radius: 8px;
-  min-width: 160px;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 1.5rem;
+  background: #000000;
+  border: 2px solid #ffffff;
 }
 
 .current-label {
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .current-value {
-  font-size: 1.5rem;
+  font-size: 2.5rem;
   font-weight: 700;
-  color: #4ade80;
-  font-family: 'Courier New', monospace;
-  min-width: 50px;
+  color: #ffffff;
+  font-family: 'Inter', monospace;
+  line-height: 1;
 }
 
 .current-unit {
-  font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-
-/*
-.motor-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-*/
-
-
-a {
+  font-size: 0.75rem;
+  color: #cccccc;
   font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
 }
 
-a:hover {
-  color: #535bf2;
-}
 
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
+/* Input and Button Styles */
+input {
+  border: 2px solid #000000;
+  padding: 0.75rem;
+  font-size: 1rem;
   font-weight: 500;
   font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  color: #000000;
+  background: #ffffff;
+  outline: none;
+}
+
+input:focus {
+  border-color: #000000;
+  background: #ffffff;
+}
+
+input::placeholder {
+  color: #999999;
 }
 
 button {
   cursor: pointer;
-  border-radius: 0.5rem;
-  max-width: 150px;
-  min-width: 80px;
-  display: block;
-  margin: 0 auto;
+  border: 2px solid #000000;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: #ffffff;
+  background: #000000;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
 button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+  background: #333333;
 }
 
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
+/* Responsive Design */
+@media (max-width: 768px) {
+  .motorspeed-input,
+  .current-vel,
+  .current-current {
+    grid-template-columns: 1fr;
   }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
+  
+  .vel-value,
+  .current-value {
+    font-size: 2rem;
   }
 }
