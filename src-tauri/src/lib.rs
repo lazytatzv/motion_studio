@@ -62,15 +62,14 @@ fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
     }
 }
 
-
 // Helper function
+// ReceiveにCRCが含まれている場合しか使わない！
 fn parse_response(resp: &[u8]) -> Result<&[u8], String> {
     if resp.len() < 3 {
         return Ok(&[]);
     }
 
-
-    let data_len = resp.len() - 2; 
+    let data_len = resp.len() - 2;
     let data = &resp[..data_len];
 
     let crc_received = ((resp[data_len] as u16) << 8) | resp[data_len + 1] as u16;
@@ -101,7 +100,6 @@ fn send_and_read(data: &[u8], roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String
     send_serial_locked(roboclaw, data)?;
     read_serial_locked(roboclaw)
 }
-
 
 // baud_rate設定用function
 #[tauri::command]
@@ -154,23 +152,10 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
 
     let response = send_and_read(&data, &mut roboclaw)?;
 
-    if !response.is_empty() {
-        match parse_response(&response) {
-            Ok(data) => {
-                //println!("Valid Response");
-                let _speed: u32 = ((data[0] as u32) << 24)
-                    | ((data[1] as u32) << 16)
-                    | ((data[2] as u32) << 8)
-                    | (data[3] as u32);
-                Ok(())
-            }
-            Err(e) => {
-                println!("Invalid Response");
-                Err(e)
-            }
-        }
-    } else {
+    if response[0] == 0xFF {
         Ok(())
+    } else {
+        Err("Failed to drive motor".to_string())
     }
 }
 
