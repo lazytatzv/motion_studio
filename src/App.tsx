@@ -14,6 +14,10 @@ function App() {
   // ボーレート
   const [baud, setBaud] = useState<number | "">("");
 
+  // シリアルポート設定
+  const [portName, setPortName] = useState<string>("");
+  const [availablePorts, setAvailablePorts] = useState<string[]>([]);
+
   // コマンドで取得した現在のモーターの速度
   const [velM1, setVelM1] = useState<number>(0);
   const [velM2, setVelM2] = useState<number>(0);
@@ -49,6 +53,29 @@ function App() {
 
     await invoke("configure_baud", { baudRate: baud });
     //console.log(baud);
+  }
+
+  const handleConfigurePort = async () => {
+    if (portName == "") return;
+
+    try {
+      await invoke("configure_port", { 
+        portName: portName,
+        baudRate: baud !== "" ? baud : null 
+      });
+      alert(`Successfully connected to ${portName}`);
+    } catch (error) {
+      alert(`Failed to connect: ${error}`);
+    }
+  }
+
+  const handleListPorts = async () => {
+    try {
+      const ports = await invoke("list_serial_ports") as string[];
+      setAvailablePorts(ports);
+    } catch (error) {
+      alert(`Failed to list ports: ${error}`);
+    }
   }
 
   // モーターのスピードをエンコーダから取得し、表示
@@ -125,16 +152,47 @@ function App() {
         </div>
       </div>
 
-      <div className="baud-container">
-        <div>
-          <label>Baud Rate</label>
-          <input
-            type="number"
-            value={baud}
-            onChange={(e) => setBaud(e.target.value === "" ? "" : Number(e.target.value))}
-          />
+      <div className="config-container">
+        <div className="baud-container">
+          <div>
+            <label>Baud Rate</label>
+            <input
+              type="number"
+              value={baud}
+              onChange={(e) => setBaud(e.target.value === "" ? "" : Number(e.target.value))}
+            />
+          </div>
+          <button onClick={handleBaud}>Configure Baud</button>
         </div>
-        <button onClick={handleBaud}>Configure</button>
+
+        <div className="port-container">
+          <div>
+            <label>Serial Port</label>
+            <input
+              type="text"
+              value={portName}
+              onChange={(e) => setPortName(e.target.value)}
+              placeholder="/dev/ttyACM0"
+            />
+          </div>
+          <button onClick={handleConfigurePort}>Configure Port</button>
+          <button onClick={handleListPorts}>List Ports</button>
+        </div>
+
+        {availablePorts.length > 0 && (
+          <div className="available-ports">
+            <label>Available Ports:</label>
+            <select 
+              value={portName} 
+              onChange={(e) => setPortName(e.target.value)}
+            >
+              <option value="">-- Select Port --</option>
+              {availablePorts.map((port) => (
+                <option key={port} value={port}>{port}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div> 
       
       {/* Showing Motors' speed*/}

@@ -17,7 +17,9 @@ pub struct Roboclaw {
 // いろいろ初期化
 static ROBOCLAW: Lazy<Mutex<Option<Roboclaw>>> = Lazy::new(|| {
     let baud_rate = 115_200;
-    let port_name = String::from("/dev/ttyACM0");
+    // Try to auto-detect serial port, fallback to None
+    let port_name = std::env::var("ROBOCLAW_PORT")
+        .unwrap_or_else(|_| String::from("/dev/ttyACM0"));
 
     let port: Option<Box<dyn SerialPort>> = match serialport::new(&port_name, baud_rate)
         .timeout(Duration::from_millis(100))
@@ -29,6 +31,7 @@ static ROBOCLAW: Lazy<Mutex<Option<Roboclaw>>> = Lazy::new(|| {
         }
         Err(e) => {
             eprintln!("Failed to open serial port {}: {}", port_name, e);
+            eprintln!("You can configure the port using configure_port command");
             None
         }
     };
@@ -136,26 +139,77 @@ fn send_and_read(data: &[u8], roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String
 
 // baud_rate設定用function
 #[tauri::command]
-fn configure_baud(baud_rate: u32) -> Result<(), String> {
-    let mut roboclaw_opt = ROBOCLAW.lock().unwrap();
-    if let Some(roboclaw) = roboclaw_opt.as_mut() {
-        roboclaw.baud_rate = baud_rate;
-        roboclaw.port = serialport::new(&roboclaw.port_name, baud_rate)
-            .timeout(Duration::from_millis(100))
-            .open()
-            .map(Some)
-            .map_err(|e| format!("Failed to reopen port: {}", e))?;
-        println!("Baud rate set to {}", baud_rate);
-        Ok(())
-    } else {
-        Err("Serial port not initialized".into())
-    }
+async fn configure_baud(baud_rate: u32) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut roboclaw_opt = ROBOCLAW.lock()
+            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+        
+        if let Some(roboclaw) = roboclaw_opt.as_mut() {
+            roboclaw.baud_rate = baud_rate;
+            roboclaw.port = serialport::new(&roboclaw.port_name, baud_rate)
+                .timeout(Duration::from_millis(100))
+                .open()
+                .map(Some)
+                .map_err(|e| format!("Failed to reopen port: {}", e))?;
+            println!("Baud rate set to {}", baud_rate);
+            Ok(())
+        } else {
+            Err("Serial port not initialized".into())
+        }
+    })
+    .await
+    .map_err(|e| format!("Thread join error: {}", e))?
+}
+
+// port設定用function
+#[tauri::command]
+async fn configure_port(port_name: String, baud_rate: Option<u32>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut roboclaw_opt = ROBOCLAW.lock()
+            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+        
+        if let Some(roboclaw) = roboclaw_opt.as_mut() {
+            let baud = baud_rate.unwrap_or(roboclaw.baud_rate);
+            
+            // Close existing port first
+            roboclaw.port = None;
+            
+            // Update configuration
+            roboclaw.port_name = port_name.clone();
+            roboclaw.baud_rate = baud;
+            
+            // Open new port
+            roboclaw.port = serialport::new(&port_name, baud)
+                .timeout(Duration::from_millis(100))
+                .open()
+                .map(Some)
+                .map_err(|e| format!("Failed to open port {}: {}", port_name, e))?;
+            
+            println!("Successfully opened port {} at {} baud", port_name, baud);
+            Ok(())
+        } else {
+            Err("RoboClaw not initialized".into())
+        }
+    })
+    .await
+    .map_err(|e| format!("Thread join error: {}", e))?
+}
+
+// 利用可能なシリアルポートをリスト
+#[tauri::command]
+fn list_serial_ports() -> Result<Vec<String>, String> {
+    serialport::available_ports()
+        .map(|ports| {
+            ports.iter().map(|p| p.port_name.clone()).collect()
+        })
+        .map_err(|e| format!("Failed to list ports: {}", e))
 }
 
 // エンコーダ等は使わない単純な速度指定でモーターを回す関数
 // あとで関数名は適切に変更する=================================================
 fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
-    let mut guard = ROBOCLAW.lock().unwrap();
+    let mut guard = ROBOCLAW.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Roboclaw not initialized")?;
 
     // 0 逆転最高速度
@@ -211,8 +265,9 @@ async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
 fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
     // println!("The read_speed is called");
 
-    // lockを取得
-    let mut guard = ROBOCLAW.lock().unwrap();
+    // lockを取得 with error handling
+    let mut guard = ROBOCLAW.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Roboclaw is not initialized")?;
 
     // Data buffer
@@ -279,7 +334,8 @@ async fn read_speed_async(motor_index: u8) -> Result<(u32, u8), String> {
 }
 
 fn read_motor_currents() -> Result<(u32, u32), String> {
-    let mut guard = ROBOCLAW.lock().unwrap();
+    let mut guard = ROBOCLAW.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
 
     let cmd = 49;
@@ -338,7 +394,8 @@ async fn read_motor_currents_async() -> Result<(u32, u32), String> {
 
 fn read_pwm_values() -> Result<(i32, i32), String> {
     
-    let mut guard = ROBOCLAW.lock().unwrap();
+    let mut guard = ROBOCLAW.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
 
     let cmd = 48;
@@ -430,6 +487,8 @@ pub fn run() {
             read_motor_currents_async,
             read_pwm_values_async,
             configure_baud,
+            configure_port,
+            list_serial_ports,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
