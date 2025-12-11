@@ -152,7 +152,10 @@ fn drive_forward(speed: u8, motor_index: u8) -> Result<(), String> {
 
     let response = send_and_read(&data, &mut roboclaw)?;
 
-    if response[0] == 0xFF {
+    //　安全にレスポンス確認
+    // DriveM1/M2ではデータを含んだ配列が返ってくる訳ではないので、
+    // 簡単なチェックだけでOk. 成功なら0xFFが返ってくる
+    if response.get(0) == Some(&0xFF) {
         Ok(())
     } else {
         Err("Failed to drive motor".to_string())
