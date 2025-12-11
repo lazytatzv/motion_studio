@@ -341,11 +341,15 @@ fn read_pwm_values() -> Result<(u32, u32), String> {
     let mut guard = ROBOCLAW.lock().unwrap();
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
 
-    let cmd = 49;
+    let cmd = 48;
     let mut data: Vec<u8> = Vec::new();
 
     data.push(roboclaw.addr);
     data.push(cmd);
+    
+    let crc = calc_crc(&data);
+    data.push((crc >> 8) as u8); // MSB
+    data.push((crc & 0xFF) as u8); // LSB
 
     let response = send_and_read(&data, &mut roboclaw)?;
 

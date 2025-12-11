@@ -80,6 +80,18 @@ function App() {
 
 	return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+	const interval = setInterval(async () => {
+		try {
+			const [m1_pwm, m2_pwm] = await invoke("read_pwm_values_async") as [number, number];
+			setPwmM1(m1_pwm);
+			setPwmM2(m2_pwm);
+		} catch {}
+	}, 300);
+
+	return () => clearInterval(interval);
+  }, []);
   
 
   return (
@@ -157,6 +169,10 @@ function App() {
 	<div className="pwm-card">
 	  <div className="pwm-label">M1</div>
 	  <div className="pwm-value">{pwmM1}</div>
+	</div>
+	<div className="pwm-card">
+	  <div className="pwm-label">M2</div>
+	  <div className="pwm-value">{pwmM2}</div>
 	</div>
       </div>
 
