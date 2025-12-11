@@ -23,7 +23,10 @@ static ROBOCLAW: Lazy<Mutex<Option<Roboclaw>>> = Lazy::new(|| {
         .timeout(Duration::from_millis(100))
         .open()
     {
-        Ok(p) => Some(p),
+        Ok(p) => {
+            println!("Successfully opened port {}", port_name);
+            Some(p)
+        }
         Err(e) => {
             eprintln!("Failed to open serial port {}: {}", port_name, e);
             None
@@ -139,9 +142,9 @@ fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
     // Drive M1 -> 6
     // Drive M2 -> 7
     if motor_index == 1 {
-        data.push(6);
+        data.push(0x06);
     } else if motor_index == 2 {
-        data.push(7);
+        data.push(0x07);
     }
 
     data.push(speed);
@@ -149,8 +152,13 @@ fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
     let crc = calc_crc(&data);
     data.push((crc >> 8) as u8); // MSB
     data.push((crc & 0xFF) as u8); // LSB
+    
+
+    //println!("[DEBUG] {:?}", data);
 
     let response = send_and_read(&data, &mut roboclaw)?;
+
+    //println!("[DEBUG] {:?}", response);
 
     //　安全にレスポンス確認
     // DriveM1/M2ではデータを含んだ配列が返ってくる訳ではないので、

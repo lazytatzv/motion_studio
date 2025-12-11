@@ -32,7 +32,7 @@ function App() {
   const handleForwardM1 = async () => {
     if (motorSpeedM1 == "") return; //空ならreturn
 
-    await invoke("drive_forward_async", { speed: motorSpeedM1 as number, motorIndex: 1 });
+    await invoke("drive_simply_async", { speed: motorSpeedM1 as number, motorIndex: 1 });
     //console.log(motorSpeedM1);
   }
 
@@ -52,13 +52,14 @@ function App() {
 
   // モーターのスピードをエンコーダから取得し、表示
   // Rust側で処理するべきかもしれない..
+  /*
   setInterval(async () => {
     const {speed, status} = await window.__TAURI__.invoke("read_speed_async", { motorIndex: 1 });
     
     setVelM1(speed);
 
   }, 500); // 500msごとに呼ばれる
-
+  */
 
   return (
     <main>
