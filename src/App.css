@@ -75,21 +75,13 @@ main {
 }
 
 /* モーターを止める */
-.stop-m1 {
+.stop-m1, .stop-m2, .max-cw-m1, .max-cw-m2, .max-ccw-m1, .max-ccw-m2 {
   display: flex;
   flex-direction: column;
   justify-content: center;
   width: 100%;
 }
 
-.stop-m2 {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  width: 100%;
-}
-
-/* Configuration Section */
 .config-container {
   display: flex;
   flex-direction: column;

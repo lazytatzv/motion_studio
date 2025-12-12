@@ -59,6 +59,26 @@ function App() {
     await invoke("drive_simply_async", { speed: 64 as number, motorIndex: 2 });
   }
 
+  // Drive Clockwise with Max speed
+  const handleMaxCwM1 = async () => {
+    await invoke("drive_symply_async", { speed: 127 as number, motorIndex: 1 });
+  }
+
+  const handleMaxCwM2 = async () => {
+    await invoke("drive_symply_async", { speed: 127 as number, motorIndex: 2 });
+  }
+
+  // Drive Counter Clockwise with Max speed
+  const handleMaxCcwM1 = async () => {
+    await invoke("drive_symply_async", { speed: 0 as number, motorIndex: 1 });
+  }
+
+  const handleMaxCcwM2 = async () => {
+    await invoke("drive_symply_async", { speed: 0 as number, motorIndex: 2 });
+  }
+
+
+
   const handleBaud = async () => {
     if (baud == "") return;
 
@@ -157,6 +177,12 @@ function App() {
           <div className="stop-m1">
             <button onClick={handleStopM1}>STOP</button>
           </div>
+          <div className="max-cw-m1">
+            <button onClick={handleMaxCwM1}>CW_MAX</button>
+          </div>
+          <div className="max-ccw-m1">
+            <button onClick={handleMaxCcwM1}>CCW_MAX</button>
+          </div>
         </div>
 
         <div className="motor-container">
@@ -172,6 +198,12 @@ function App() {
           <button onClick={handleDriveM2}>Drive M2</button>
           <div className="stop-m2">
             <button onClick={handleStopM2}>STOP</button>
+          </div>
+          <div className="max-cw-m2">
+            <button onClick={handleMaxCwM2}>CW_MAX</button>
+          </div>
+          <div className="max-ccw-m2">
+            <button onClick={handleMaxCcwM2}>CCW_MAX</button>
           </div>
         </div>
       </div>
