@@ -29,23 +29,34 @@ function App() {
   // Current motor pwm
   const [pwmM1, setPwmM1] = useState<number>(0);
   const [pwmM2, setPwmM2] = useState<number>(0);
+ 
   
+  // ===== Event Handler ==================================
 
   // モータ駆動用。Rust関数をinvokeし、裏でシリアル送って回す
   // M1 Drive -> ID 6
   // M2 Drive -> ID 7
-  const handleForwardM1 = async () => {
+  const handleDriveM1 = async () => {
     if (motorSpeedM1 == "") return; //空ならreturn
 
     await invoke("drive_simply_async", { speed: motorSpeedM1 as number, motorIndex: 1 });
     //console.log(motorSpeedM1);
   }
 
-  const handleForwardM2 = async () => {
+  const handleDriveM2 = async () => {
     if (motorSpeedM2 == "") return; 
 
     await invoke("drive_simply_async", { speed: motorSpeedM2 as number, motorIndex: 2 });
     //console.log(motorSpeedM2);
+  }
+
+  // Stop motors
+  const handleStopM1 = async () => {
+    await invoke("drive_simply_async", { speed: 64 as number, motorIndex: 1 });
+  }
+
+  const handleStopM2 = async() => {
+    await invoke("drive_simply_async", { speed: 64 as number, motorIndex: 2 });
   }
 
   const handleBaud = async () => {
@@ -81,6 +92,8 @@ function App() {
   const handleResetEncoder = async () => {
     await invoke("reset_encoder_async");
   }
+
+  // ===== Infinite Loop to Fetch Data from Motor Driver etc. =======================
 
   // モーターのスピードをエンコーダから取得し、表示
   // Rust側で処理するべきかもしれない..
@@ -124,6 +137,7 @@ function App() {
 	return () => clearInterval(interval);
   }, []);
   
+  // ====== HTML ===========
 
   return (
     <main>
@@ -139,7 +153,10 @@ function App() {
               onChange={(e) => setMotorSpeedM1(e.target.value === "" ? "" : Number(e.target.value))}
             />
           </div>
-          <button onClick={handleForwardM1}>Drive M1</button>
+          <button onClick={handleDriveM1}>Drive M1</button>
+        <div className="stop-m1">
+          <button onClick={handleStopM1}>STOP</button>
+        </div>
         </div>
 
         <div className="motor-container">
@@ -152,7 +169,9 @@ function App() {
               onChange={(e) => setMotorSpeedM2(e.target.value === "" ? "" : Number(e.target.value))}
             />
           </div>
-          <button onClick={handleForwardM2}>Drive M2</button>
+          <div className="stop-m2">
+            <button onClick={handleDriveM2}>Drive M2</button>
+          </div>
         </div>
       </div>
 

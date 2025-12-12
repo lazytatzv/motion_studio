@@ -6,6 +6,7 @@ use std::time::Duration;
 use serialport::SerialPort; // trait??
                             //
 
+
 // Roboclawの設定等を保持する構造体
 pub struct Roboclaw {
     addr: u8,
@@ -208,7 +209,6 @@ fn list_serial_ports() -> Result<Vec<String>, String> {
 }
 
 // エンコーダ等は使わない単純な速度指定でモーターを回す関数
-// あとで関数名は適切に変更する=================================================
 fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
     let mut guard = ROBOCLAW.lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -516,7 +516,7 @@ fn calc_crc(data: &[u8]) -> u16 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(tauri::generate_handler![ // Front側からinvoke()で呼ぶ関数を登録する
             drive_simply_async,
             read_speed_async,
             read_motor_currents_async,
