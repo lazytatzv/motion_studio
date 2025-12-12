@@ -524,8 +524,9 @@ async fn http_server() {
         "Hello, World!"
     }));
 
-    // LoopBack
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    // TailscaleのIPアドレス
+    // ネットワーク内ならアクセス可能
+    let listener = tokio::net::TcpListener::bind("100.112.18.62:3000")
         .await
         .unwrap();
 
