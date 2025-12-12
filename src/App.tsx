@@ -154,9 +154,9 @@ function App() {
             />
           </div>
           <button onClick={handleDriveM1}>Drive M1</button>
-        <div className="stop-m1">
-          <button onClick={handleStopM1}>STOP</button>
-        </div>
+          <div className="stop-m1">
+            <button onClick={handleStopM1}>STOP</button>
+          </div>
         </div>
 
         <div className="motor-container">
@@ -169,8 +169,9 @@ function App() {
               onChange={(e) => setMotorSpeedM2(e.target.value === "" ? "" : Number(e.target.value))}
             />
           </div>
+          <button onClick={handleDriveM2}>Drive M2</button>
           <div className="stop-m2">
-            <button onClick={handleDriveM2}>Drive M2</button>
+            <button onClick={handleStopM2}>STOP</button>
           </div>
         </div>
       </div>
