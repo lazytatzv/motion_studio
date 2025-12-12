@@ -4,7 +4,12 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serialport::SerialPort; // trait??
-                            //
+                            
+// http server
+use axum::{
+    routing::get,
+    Router,
+};
 
 
 // Roboclawの設定等を保持する構造体
@@ -510,6 +515,22 @@ fn calc_crc(data: &[u8]) -> u16 {
         }
     }
     crc
+}
+
+// Http サーバを建てる
+// ブラウザからデータの確認用
+async fn http_server() {
+    let app = Router::new().route("/", get(|| async {
+        "Hello, World!"
+    }));
+
+    // LoopBack
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+        .await
+        .unwrap();
+
+    axum::serve(listener, app).await.unwrap();
+
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
