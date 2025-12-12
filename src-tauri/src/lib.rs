@@ -535,6 +535,10 @@ async fn http_server() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    tauri::async_runtime::spawn(async {
+        http_server().await;
+    });
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![ // Front側からinvoke()で呼ぶ関数を登録する
