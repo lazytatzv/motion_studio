@@ -269,7 +269,8 @@ async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
         .map_err(|e| format!("Thread join error: {:?}", e))?
 }
 
-fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
+// エンコーダ値をpulse per secondで取得する
+fn read_speed(motor_index: u8) -> Result<i32, String> {
     // println!("The read_speed is called");
 
     // lockを取得 with error handling
@@ -290,9 +291,7 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
         data.push(19);
     }
 
-    let crc = calc_crc(&data);
-    data.push((crc >> 8) as u8); // MSB
-    data.push((crc & 0xFF) as u8); // LSB
+    // Without CRC16
 
     // シリアルデータ送受信
     let response = send_and_read(&data, &mut roboclaw)?;
@@ -315,8 +314,13 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
 
             let status = data[4];
          
-            // タプルで返す
-            (speed, status)
+            let speed_pps: i32 = if status == 0 {
+                return Ok(speed as i32);
+            } else if status == 1 {
+                return Ok(-(speed as i32));
+            } else {
+                return Err("Invalid value".to_string());
+            };
 
         }
         Err(e) => {
@@ -324,17 +328,10 @@ fn read_speed(motor_index: u8) -> Result<(u32, u8), String> {
             return Err("Invalid response".to_string());
         }
     };
-
-    let (speed, status) = result;
-    
-    println!("[DEBUG] speed {:?}", speed);
-
-    Ok((speed, status))
-
 }
 
 #[tauri::command]
-async fn read_speed_async(motor_index: u8) -> Result<(u32, u8), String> {
+async fn read_speed_async(motor_index: u8) -> Result<i32, String> {
     tauri::async_runtime::spawn_blocking(move || read_speed(motor_index))
         .await
         .map_err(|e| format!("Thread join error: {:?}", e))?
@@ -536,9 +533,12 @@ async fn http_server() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // http Server
+    /*
     tauri::async_runtime::spawn(async {
         http_server().await;
     });
+    */
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
