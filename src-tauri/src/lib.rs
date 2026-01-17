@@ -8,6 +8,7 @@ use serialport::SerialPort; // trait??
 use serde_json::Value as JsonValue;
 use serde::{Serialize, Deserialize};
 use serde_json::json;
+use num_complex::Complex64;
 
 const SIMULATED_PORT: &str = "SIMULATED";
 
@@ -1120,6 +1121,101 @@ fn read_pwm_values() -> Result<(i32, i32), String> {
 }
 
 #[tauri::command]
+async fn fit_frf_async(
+    freqs_hz: Vec<f64>,
+    gains: Vec<f64>,
+    phases_deg: Vec<f64>,
+    tau_min: f64,
+    tau_max: f64,
+    tau_points: u32,
+) -> Result<JsonValue, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if freqs_hz.len() == 0 || freqs_hz.len() != gains.len() || gains.len() != phases_deg.len() {
+            return Err("Input arrays must be same non-zero length".to_string());
+        }
+
+        let n = freqs_hz.len();
+        let mut h_meas: Vec<Complex64> = Vec::with_capacity(n);
+        for i in 0..n {
+            let mag = gains[i];
+            let ph = phases_deg[i].to_radians();
+            h_meas.push(Complex64::from_polar(&mag, &ph));
+        }
+
+        // grid search over tau in logspace
+        let pts = tau_points.max(3) as usize;
+        let log_min = tau_min.ln();
+        let log_max = tau_max.ln();
+        let mut best_tau = tau_min;
+        let mut best_k = Complex64::new(0.0, 0.0);
+        let mut best_err = std::f64::INFINITY;
+
+        for j in 0..pts {
+            let frac = if pts == 1 { 0.0 } else { j as f64 / (pts - 1) as f64 };
+            let tau = (log_min + frac * (log_max - log_min)).exp();
+
+            // build basis vector b_i = 1/(1 + j w tau)
+            let mut denom_sum = Complex64::new(0.0, 0.0);
+            let mut numer_sum = Complex64::new(0.0, 0.0);
+            let mut err_sum = 0.0_f64;
+            for i in 0..n {
+                let w = 2.0 * std::f64::consts::PI * freqs_hz[i];
+                let jwta = Complex64::new(0.0, w * tau);
+                let bi = Complex64::new(1.0, 0.0) / (Complex64::new(1.0, 0.0) + jwta);
+                denom_sum += bi.conj() * bi;
+                numer_sum += h_meas[i] * bi.conj();
+            }
+            if denom_sum.norm_sqr() == 0.0 {
+                continue;
+            }
+            let k = numer_sum / denom_sum;
+
+            // compute residual
+            for i in 0..n {
+                let w = 2.0 * std::f64::consts::PI * freqs_hz[i];
+                let jwta = Complex64::new(0.0, w * tau);
+                let bi = Complex64::new(1.0, 0.0) / (Complex64::new(1.0, 0.0) + jwta);
+                let model = k * bi;
+                let diff = model - h_meas[i];
+                err_sum += diff.norm_sqr();
+            }
+
+            let err = err_sum / (n as f64);
+            if err.is_finite() && err < best_err {
+                best_err = err;
+                best_tau = tau;
+                best_k = k;
+            }
+        }
+
+        // build fitted response for return
+        let mut fitted_mag: Vec<f64> = Vec::with_capacity(n);
+        let mut fitted_phase: Vec<f64> = Vec::with_capacity(n);
+        for i in 0..n {
+            let w = 2.0 * std::f64::consts::PI * freqs_hz[i];
+            let jwta = Complex64::new(0.0, w * best_tau);
+            let bi = Complex64::new(1.0, 0.0) / (Complex64::new(1.0, 0.0) + jwta);
+            let model = best_k * bi;
+            fitted_mag.push(model.norm());
+            fitted_phase.push(model.arg().to_degrees());
+        }
+
+        let result = json!({
+            "K": {"re": best_k.re, "im": best_k.im},
+            "K_mag": best_k.norm(),
+            "tau_s": best_tau,
+            "residual_rms": best_err.sqrt(),
+            "fitted_mag": fitted_mag,
+            "fitted_phase": fitted_phase,
+        });
+
+        Ok(result)
+    })
+    .await
+    .map_err(|e| format!("Thread join error: {:?}", e))?
+}
+
+#[tauri::command]
 async fn read_pwm_values_async() -> Result<(i32, i32), String> {
     tauri::async_runtime::spawn_blocking(|| read_pwm_values())
         .await
@@ -1222,6 +1318,7 @@ pub fn run() {
             set_sim_params,
             set_sim_params_js,
             estimate_tf_from_step,
+            fit_frf_async,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
