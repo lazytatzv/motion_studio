@@ -41,20 +41,20 @@ packaging/apt/repo/
 Assuming GitHub Pages at:
 
 ```
-https://lazytatzv.github.io/roboclaw-studio
+https://lazytatzv.github.io/motion_studio
 ```
 
 1) Install the repo key:
 
 ```bash
-curl -fsSL https://lazytatzv.github.io/roboclaw-studio/roboclaw-studio.gpg | \
+curl -fsSL https://lazytatzv.github.io/motion_studio/roboclaw-studio.gpg | \
   sudo gpg --dearmor -o /usr/share/keyrings/roboclaw-studio.gpg
 ```
 
 2) Add the repo source:
 
 ```bash
-echo "deb [signed-by=/usr/share/keyrings/roboclaw-studio.gpg] https://lazytatzv.github.io/roboclaw-studio stable main" | \
+echo "deb [signed-by=/usr/share/keyrings/roboclaw-studio.gpg] https://lazytatzv.github.io/motion_studio stable main" | \
   sudo tee /etc/apt/sources.list.d/roboclaw-studio.list
 ```
 

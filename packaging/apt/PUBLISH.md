@@ -34,4 +34,4 @@ git push origin gh-pages
 ## Notes
 
 - Set GitHub Pages to serve from the `gh-pages` branch.
-- The URL will be: `https://<user>.github.io/roboclaw-studio`
+- The URL will be: `https://<user>.github.io/motion_studio`
