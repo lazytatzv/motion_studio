@@ -29,7 +29,7 @@ struct SimState {
     last_update: Option<Instant>,
     // Simulation parameters
     tau: f32,
-    max_vel: f32,
+    gain: f32,
 }
 
 static SIMULATION_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -44,7 +44,7 @@ static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m2_vel: 0.0,
     last_update: None,
     tau: 0.25_f32,
-    max_vel: 120.0_f32,
+    gain: 120.0_f32,
 }));
 
 fn sim_update(sim: &mut SimState) {
@@ -60,7 +60,7 @@ fn sim_update(sim: &mut SimState) {
     };
 
     let tau = sim.tau;
-    let max_vel = sim.max_vel;
+    let gain = sim.gain;
 
     let m1_u = if sim.m1_mode_pwm {
         (sim.m1_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
@@ -73,8 +73,8 @@ fn sim_update(sim: &mut SimState) {
         ((sim.m2_speed as f32 - 64.0) / 63.0).clamp(-1.0, 1.0)
     };
 
-    let m1_target = max_vel * m1_u;
-    let m2_target = max_vel * m2_u;
+    let m1_target = gain * m1_u;
+    let m2_target = gain * m2_u;
 
     sim.m1_vel += (dt / tau) * (m1_target - sim.m1_vel);
     sim.m2_vel += (dt / tau) * (m2_target - sim.m2_vel);
@@ -571,11 +571,11 @@ async fn run_step_response_async(motor_index: u8, step_value: u8, duration_ms: u
 }
 
 #[tauri::command]
-fn set_sim_params(tau: f32, max_vel: f32) -> Result<(), String> {
+fn set_sim_params(tau: f32, gain: f32) -> Result<(), String> {
     let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
     sim.tau = tau;
-    sim.max_vel = max_vel;
-    println!("[SIM] set_sim_params: tau={} s, max_vel={} pps", tau, max_vel);
+    sim.gain = gain;
+    println!("[SIM] set_sim_params: tau={} s, gain={} pps per ±1", tau, gain);
     Ok(())
 }
 

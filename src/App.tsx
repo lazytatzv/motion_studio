@@ -75,7 +75,7 @@ function App() {
   const stepCmdRef = useRef<number>(SPEED_STOP);
   // Simulation model params (ms and pps)
   const [simTauMs, setSimTauMs] = useState<number>(250);
-  const [simMaxVel, setSimMaxVel] = useState<number>(120);
+  const [simGain, setSimGain] = useState<number>(120);
  
   
   // ===== Event Handler ==================================
@@ -236,8 +236,8 @@ function App() {
     try {
       // convert ms -> seconds for Rust
       const tau_s = simTauMs / 1000.0;
-      await invoke("set_sim_params", { tau: tau_s, max_vel: simMaxVel });
-      alert(`Applied sim params: tau=${simTauMs} ms, max_vel=${simMaxVel} pps`);
+      await invoke("set_sim_params", { tau: tau_s, gain: simGain });
+      alert(`Applied sim params: tau=${simTauMs} ms, gain=${simGain} pps`);
     } catch (e) {
       alert(`Failed to apply sim params: ${e}`);
     }
@@ -473,10 +473,10 @@ function App() {
         portSelectRef={portSelectRef}
         simulationPort={SIMULATED_PORT}
         simTauMs={simTauMs}
-        simMaxVel={simMaxVel}
         onChangeSimTauMs={setSimTauMs}
-        onChangeSimMaxVel={setSimMaxVel}
         onApplySimParams={applySimParams}
+        simGain={simGain}
+        onChangeSimGain={setSimGain}
       />
 
       <TelemetrySection

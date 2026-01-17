@@ -18,10 +18,12 @@ interface ConfigurationSectionProps {
   onToggleSimulation: () => void;
   portSelectRef: RefObject<HTMLSelectElement | null>;
   simulationPort: string;
+
+  // simulation params
   simTauMs: number;
-  simMaxVel: number;
   onChangeSimTauMs: (value: number) => void;
-  onChangeSimMaxVel: (value: number) => void;
+  simGain: number;
+  onChangeSimGain: (value: number) => void;
   onApplySimParams: () => void;
 }
 
@@ -43,9 +45,9 @@ export function ConfigurationSection({
   portSelectRef,
   simulationPort,
   simTauMs,
-  simMaxVel,
   onChangeSimTauMs,
-  onChangeSimMaxVel,
+  simGain,
+  onChangeSimGain,
   onApplySimParams,
 }: ConfigurationSectionProps) {
   return (
@@ -187,14 +189,14 @@ export function ConfigurationSection({
                 value={simTauMs}
                 onChange={(e) => onChangeSimTauMs(Number(e.target.value))}
               />
-              <label className={styles.labelClass}>Max Velocity (pps)</label>
+              <label className={styles.labelClass}>Gain (pps)</label>
               <input
                 className={styles.inputClass}
                 type="number"
-                min={10}
-                step={10}
-                value={simMaxVel}
-                onChange={(e) => onChangeSimMaxVel(Number(e.target.value))}
+                min={1}
+                step={1}
+                value={simGain}
+                onChange={(e) => onChangeSimGain(Number(e.target.value))}
               />
               <div className="flex gap-2">
                 <button className={styles.btnSecondary} onClick={onApplySimParams} disabled={!isSimulation}>

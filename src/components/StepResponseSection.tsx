@@ -25,7 +25,7 @@ interface StepResponseSectionProps {
   onOffsetChange: (value: number) => void;
 }
 
-function buildPath(samples: StepSample[], width: number, height: number, motorIndex: 1 | 2, left: number, innerW: number) {
+function buildPath(samples: StepSample[], _width: number, height: number, motorIndex: 1 | 2, left: number, innerW: number) {
   if (samples.length === 0) return "";
   const t0 = samples[0].t;
   const maxT = (samples[samples.length - 1].t - t0) || 1;
@@ -62,7 +62,7 @@ function buildPath(samples: StepSample[], width: number, height: number, motorIn
     .join(" ");
 }
 
-function buildCmdPath(samples: StepSample[], width: number, height: number, left: number, innerW: number) {
+function buildCmdPath(samples: StepSample[], _width: number, height: number, left: number, innerW: number) {
   if (samples.length === 0) return "";
   const t0 = samples[0].t;
   const maxT = (samples[samples.length - 1].t - t0) || 1;
