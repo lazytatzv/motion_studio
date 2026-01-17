@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -12,6 +13,28 @@ pub struct Roboclaw {
     baud_rate: u32,
     port_name: String,
     port: Option<Box<dyn SerialPort>>, // Must be initialized only once
+}
+
+#[derive(Default)]
+struct SimState {
+    m1_speed: u8,
+    m2_speed: u8,
+}
+
+static SIMULATION_ENABLED: AtomicBool = AtomicBool::new(false);
+static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
+    m1_speed: 64,
+    m2_speed: 64,
+}));
+
+fn is_simulation_enabled() -> bool {
+    SIMULATION_ENABLED.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_simulation_mode(enabled: bool) -> Result<(), String> {
+    SIMULATION_ENABLED.store(enabled, Ordering::Relaxed);
+    Ok(())
 }
 
 // Initialize defaults
@@ -209,6 +232,18 @@ fn list_serial_ports() -> Result<Vec<String>, String> {
 
 // Drive motor with a simple speed command (no encoder)
 fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
+    if is_simulation_enabled() {
+        let mut sim = SIM_STATE
+            .lock()
+            .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        if motor_index == 1 {
+            sim.m1_speed = speed;
+        } else if motor_index == 2 {
+            sim.m2_speed = speed;
+        }
+        return Ok(());
+    }
+
     let mut guard = ROBOCLAW.lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Roboclaw not initialized")?;
@@ -265,6 +300,15 @@ async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
 
 // Read encoder value in pulses per second
 fn read_speed(motor_index: u8) -> Result<i32, String> {
+    if is_simulation_enabled() {
+        let sim = SIM_STATE
+            .lock()
+            .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        let speed = if motor_index == 1 { sim.m1_speed } else { sim.m2_speed };
+        let signed = speed as i32 - 64;
+        return Ok(signed * 10);
+    }
+
     // println!("The read_speed is called");
 
     // Acquire lock with error handling
@@ -332,6 +376,17 @@ async fn read_speed_async(motor_index: u8) -> Result<i32, String> {
 }
 
 fn read_motor_currents() -> Result<(u32, u32), String> {
+    if is_simulation_enabled() {
+        let sim = SIM_STATE
+            .lock()
+            .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        let m1_delta = (sim.m1_speed as i32 - 64).abs() as u32;
+        let m2_delta = (sim.m2_speed as i32 - 64).abs() as u32;
+        let m1_current = 100 + m1_delta * 20;
+        let m2_current = 100 + m2_delta * 20;
+        return Ok((m1_current, m2_current));
+    }
+
     let mut guard = ROBOCLAW.lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
@@ -385,6 +440,16 @@ async fn read_motor_currents_async() -> Result<(u32, u32), String> {
 }
 
 fn read_pwm_values() -> Result<(i32, i32), String> {
+    if is_simulation_enabled() {
+        let sim = SIM_STATE
+            .lock()
+            .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        let m1_signed = sim.m1_speed as i32 - 64;
+        let m2_signed = sim.m2_speed as i32 - 64;
+        let m1_pwm = (m1_signed * 500).clamp(-32767, 32767);
+        let m2_pwm = (m2_signed * 500).clamp(-32767, 32767);
+        return Ok((m1_pwm, m2_pwm));
+    }
     
     let mut guard = ROBOCLAW.lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -448,6 +513,14 @@ async fn read_pwm_values_async() -> Result<(i32, i32), String> {
 }
 
 fn reset_encoder() -> Result<(), String> {
+    if is_simulation_enabled() {
+        let mut sim = SIM_STATE
+            .lock()
+            .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        sim.m1_speed = 64;
+        sim.m2_speed = 64;
+        return Ok(());
+    }
  
     let mut guard = ROBOCLAW.lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -521,6 +594,7 @@ pub fn run() {
             configure_baud,
             configure_port,
             list_serial_ports,
+            set_simulation_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

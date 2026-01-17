@@ -75,6 +75,12 @@ body {
   border-color: rgba(255, 110, 110, 0.3);
 }
 
+.status-simulation {
+  background: rgba(140, 120, 255, 0.16);
+  color: #d4c9ff;
+  border-color: rgba(140, 120, 255, 0.35);
+}
+
 .status-banner {
   padding: 0.9rem 1.1rem;
   border-radius: 14px;
@@ -88,6 +94,12 @@ body {
   background: rgba(255, 96, 96, 0.08);
   border-color: rgba(255, 110, 110, 0.25);
   color: #ffbcbc;
+}
+
+.status-banner.simulation {
+  background: rgba(140, 120, 255, 0.12);
+  border-color: rgba(140, 120, 255, 0.3);
+  color: #e2dcff;
 }
 
 .section {

@@ -23,6 +23,7 @@ function App() {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [connectedPort, setConnectedPort] = useState<string>("");
   const [connectionError, setConnectionError] = useState<string>("");
+  const [isSimulation, setIsSimulation] = useState<boolean>(false);
 
   // Current motor speed fetched by command
   const [velM1, setVelM1] = useState<number>(0);
@@ -126,6 +127,13 @@ function App() {
     await invoke("reset_encoder_async");
   }
 
+  const handleToggleSimulation = async () => {
+    const nextValue = !isSimulation;
+    setIsSimulation(nextValue);
+    setConnectionError("");
+    await invoke("set_simulation_mode", { enabled: nextValue });
+  }
+
   // ===== Infinite Loop to Fetch Data from Motor Driver etc. =======================
 
   // Read motor speed from encoder and display
@@ -171,6 +179,7 @@ function App() {
   }, []);
   
   // ====== HTML ===========
+  const driveEnabled = isConnected || isSimulation;
 
   return (
     <main className="app">
@@ -179,13 +188,22 @@ function App() {
           <h1 className="app-title">RoboClaw Studio</h1>
           <p className="app-subtitle">Unofficial Linux GUI for Basicmicro RoboClaw</p>
         </div>
-        <div className={`status-pill ${isConnected ? "status-connected" : "status-disconnected"}`}>
-          {isConnected ? `Connected: ${connectedPort}` : "Disconnected"}
-        </div>
+        {isSimulation ? (
+          <div className="status-pill status-simulation">Simulation Mode</div>
+        ) : (
+          <div className={`status-pill ${isConnected ? "status-connected" : "status-disconnected"}`}>
+            {isConnected ? `Connected: ${connectedPort}` : "Disconnected"}
+          </div>
+        )}
       </header>
-      {!isConnected && (
+      {!driveEnabled && (
         <div className="status-banner">
           Serial port is not connected. Connect first to enable drive control.
+        </div>
+      )}
+      {isSimulation && (
+        <div className="status-banner simulation">
+          Simulation mode enabled. Drive commands use a virtual device and no serial port.
         </div>
       )}
 
@@ -211,17 +229,17 @@ function App() {
                   min={SPEED_MIN}
                   max={SPEED_MAX}
                   step={1}
-                  disabled={!isConnected}
+                  disabled={!driveEnabled}
                   value={motorSpeedM1 === "" ? SPEED_STOP : motorSpeedM1}
                   onChange={(e) => setMotorSpeedM1(Number(e.target.value))}
                 />
                 <div className="range-value">{motorSpeedM1 === "" ? SPEED_STOP : motorSpeedM1}</div>
-                <button className="btn btn-primary" onClick={handleDriveM1} disabled={!isConnected}>Drive</button>
+                <button className="btn btn-primary" onClick={handleDriveM1} disabled={!driveEnabled}>Drive</button>
               </div>
               <div className="button-row">
-                <button className="btn btn-danger" onClick={handleStopM1} disabled={!isConnected}>Stop</button>
-                <button className="btn btn-ghost" onClick={handleMaxCwM1} disabled={!isConnected}>CW Max</button>
-                <button className="btn btn-ghost" onClick={handleMaxCcwM1} disabled={!isConnected}>CCW Max</button>
+                <button className="btn btn-danger" onClick={handleStopM1} disabled={!driveEnabled}>Stop</button>
+                <button className="btn btn-ghost" onClick={handleMaxCwM1} disabled={!driveEnabled}>CW Max</button>
+                <button className="btn btn-ghost" onClick={handleMaxCcwM1} disabled={!driveEnabled}>CCW Max</button>
               </div>
             </div>
           </div>
@@ -238,17 +256,17 @@ function App() {
                   min={SPEED_MIN}
                   max={SPEED_MAX}
                   step={1}
-                  disabled={!isConnected}
+                  disabled={!driveEnabled}
                   value={motorSpeedM2 === "" ? SPEED_STOP : motorSpeedM2}
                   onChange={(e) => setMotorSpeedM2(Number(e.target.value))}
                 />
                 <div className="range-value">{motorSpeedM2 === "" ? SPEED_STOP : motorSpeedM2}</div>
-                <button className="btn btn-primary" onClick={handleDriveM2} disabled={!isConnected}>Drive</button>
+                <button className="btn btn-primary" onClick={handleDriveM2} disabled={!driveEnabled}>Drive</button>
               </div>
               <div className="button-row">
-                <button className="btn btn-danger" onClick={handleStopM2} disabled={!isConnected}>Stop</button>
-                <button className="btn btn-ghost" onClick={handleMaxCwM2} disabled={!isConnected}>CW Max</button>
-                <button className="btn btn-ghost" onClick={handleMaxCcwM2} disabled={!isConnected}>CCW Max</button>
+                <button className="btn btn-danger" onClick={handleStopM2} disabled={!driveEnabled}>Stop</button>
+                <button className="btn btn-ghost" onClick={handleMaxCwM2} disabled={!driveEnabled}>CW Max</button>
+                <button className="btn btn-ghost" onClick={handleMaxCcwM2} disabled={!driveEnabled}>CCW Max</button>
               </div>
             </div>
           </div>
@@ -312,6 +330,21 @@ function App() {
               {connectionError && (
                 <div className="status-banner error">{connectionError}</div>
               )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-title">Simulation</div>
+            <div className="card-body">
+              <div className="section-subtitle">Virtual device for testing without hardware.</div>
+              <div className="button-row">
+                <button
+                  className={isSimulation ? "btn btn-danger" : "btn btn-secondary"}
+                  onClick={handleToggleSimulation}
+                >
+                  {isSimulation ? "Disable Simulation" : "Enable Simulation"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
