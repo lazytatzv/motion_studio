@@ -38,12 +38,12 @@ EOF
 # Creates Release.gpg (detached) and InRelease (inline)
 if command -v gpg >/dev/null 2>&1; then
   if [ -n "$GPG_KEY_ID" ]; then
-    gpg --yes --default-key "$GPG_KEY_ID" --output "dists/$DIST/Release.gpg" -ba "dists/$DIST/Release"
-    gpg --yes --default-key "$GPG_KEY_ID" --output "dists/$DIST/InRelease" -abs "dists/$DIST/Release"
+    gpg --yes --default-key "$GPG_KEY_ID" --output "dists/$DIST/Release.gpg" --detach-sign "dists/$DIST/Release"
+    gpg --yes --default-key "$GPG_KEY_ID" --output "dists/$DIST/InRelease" --clearsign "dists/$DIST/Release"
     gpg --yes --output "roboclaw-studio.gpg" --export "$GPG_KEY_ID"
   else
-    gpg --yes --output "dists/$DIST/Release.gpg" -ba "dists/$DIST/Release"
-    gpg --yes --output "dists/$DIST/InRelease" -abs "dists/$DIST/Release"
+    gpg --yes --output "dists/$DIST/Release.gpg" --detach-sign "dists/$DIST/Release"
+    gpg --yes --output "dists/$DIST/InRelease" --clearsign "dists/$DIST/Release"
   fi
 else
   echo "gpg not found; skipping signature"
