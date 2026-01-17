@@ -6,6 +6,7 @@ import { PwmSection } from "./components/PwmSection";
 import { ConfigurationSection } from "./components/ConfigurationSection";
 import { TelemetrySection } from "./components/TelemetrySection";
 import { StepResponseSection } from "./components/StepResponseSection";
+import FrequencyResponseSection from "./components/FrequencyResponseSection";
 import { styles } from "./uiStyles";
 
 const SPEED_MIN = 0;
@@ -63,6 +64,7 @@ function App() {
   const [stepValueM1, setStepValueM1] = useState<number>(SPEED_MAX);
   const [stepDurationMsM1, setStepDurationMsM1] = useState<number>(2000);
   const [stepOffsetMsM1, setStepOffsetMsM1] = useState<number>(150);
+  const [sampleIntervalMsM1, setSampleIntervalMsM1] = useState<number>(50);
   const [stepSamplesM1, setStepSamplesM1] = useState<
     { t: number; velM1: number; velM2: number; cmd: number }[]
   >([]);
@@ -71,6 +73,7 @@ function App() {
   const [stepValueM2, setStepValueM2] = useState<number>(SPEED_MAX);
   const [stepDurationMsM2, setStepDurationMsM2] = useState<number>(2000);
   const [stepOffsetMsM2, setStepOffsetMsM2] = useState<number>(150);
+  const [sampleIntervalMsM2, setSampleIntervalMsM2] = useState<number>(50);
   const [stepSamplesM2, setStepSamplesM2] = useState<
     { t: number; velM1: number; velM2: number; cmd: number }[]
   >([]);
@@ -80,11 +83,11 @@ function App() {
   const stepTimeoutRef = useRef<number | null>(null);
   const stepSamplingStartRef = useRef<number | null>(null);
   const stepCmdRef = useRef<number>(SPEED_STOP);
-  // Simulation model params (ms and pps)
-  const [simTauMsM1, setSimTauMsM1] = useState<number>(250);
-  const [simGainM1, setSimGainM1] = useState<number>(120);
-  const [simTauMsM2, setSimTauMsM2] = useState<number>(250);
-  const [simGainM2, setSimGainM2] = useState<number>(120);
+  // Simulation model params (ms and pps) - professional defaults
+  const [simTauMsM1, setSimTauMsM1] = useState<number>(100);
+  const [simGainM1, setSimGainM1] = useState<number>(100);
+  const [simTauMsM2, setSimTauMsM2] = useState<number>(100);
+  const [simGainM2, setSimGainM2] = useState<number>(100);
  
   
   // ===== Event Handler ==================================
@@ -319,21 +322,39 @@ function App() {
       stepCmdRef.current = SPEED_STOP;
 
       try {
-        const sampleInterval = 50;
+        const rawSampleInterval = motorIndex === 1 ? sampleIntervalMsM1 : sampleIntervalMsM2;
+        const sampleInterval = Math.max(10, Math.min(1000, rawSampleInterval));
         try { console.debug("Invoking run_step_response_async with apply_delay_ms:", stepOffsetMs); } catch {}
-        const raw = await invoke("run_step_response_async", {
-          // include both snake_case and camelCase to be tolerant of invoke deserialization
-          motor_index: motorIndex,
-          motorIndex: motorIndex,
-          step_value: stepValue,
-          stepValue: stepValue,
-          duration_ms: stepDurationMs,
-          durationMs: stepDurationMs,
-          sample_interval_ms: sampleInterval,
-          sampleIntervalMs: sampleInterval,
-          apply_delay_ms: stepOffsetMs,
-          applyDelayMs: stepOffsetMs,
-        }) as Array<[number, number, number]>;
+        let raw: Array<[number, number, number]>;
+        if (isSimulation) {
+          try { console.debug("Invoking run_step_response_async with apply_delay_ms:", stepOffsetMs); } catch {}
+          raw = await invoke("run_step_response_async", {
+            motor_index: motorIndex,
+            motorIndex: motorIndex,
+            step_value: stepValue,
+            stepValue: stepValue,
+            duration_ms: stepDurationMs,
+            durationMs: stepDurationMs,
+            sample_interval_ms: sampleInterval,
+            sampleIntervalMs: sampleInterval,
+            apply_delay_ms: stepOffsetMs,
+            applyDelayMs: stepOffsetMs,
+          }) as Array<[number, number, number]>;
+        } else {
+          try { console.debug("Invoking run_step_response_device_async with apply_delay_ms:", stepOffsetMs); } catch {}
+          raw = await invoke("run_step_response_device_async", {
+            motor_index: motorIndex,
+            motorIndex: motorIndex,
+            step_value: stepValue,
+            stepValue: stepValue,
+            duration_ms: stepDurationMs,
+            durationMs: stepDurationMs,
+            sample_interval_ms: sampleInterval,
+            sampleIntervalMs: sampleInterval,
+            apply_delay_ms: stepOffsetMs,
+            applyDelayMs: stepOffsetMs,
+          }) as Array<[number, number, number]>;
+        }
 
         try { console.debug("run_step_response_async raw (first 20):", raw.slice(0, 20)); } catch {}
 
@@ -550,9 +571,11 @@ function App() {
             motorIndex={1}
             stepValue={stepValueM1}
             durationMs={stepDurationMsM1}
+            sampleIntervalMs={sampleIntervalMsM1}
             samples={stepSamplesM1}
             onStepChange={setStepValueM1}
             onDurationChange={setStepDurationMsM1}
+            onSampleIntervalChange={setSampleIntervalMsM1}
             onStart={() => startStepCapture(1)}
             onStop={() => stopStepCapture(1)}
             onClear={() => clearStepSamples(1)}
@@ -560,15 +583,18 @@ function App() {
             stepOffsetMs={stepOffsetMsM1}
             onOffsetChange={setStepOffsetMsM1}
           />
+          <FrequencyResponseSection driveEnabled={driveEnabled} motorIndex={1} />
           <StepResponseSection
             driveEnabled={driveEnabled}
             isRunning={isStepRunningM2}
             motorIndex={2}
             stepValue={stepValueM2}
             durationMs={stepDurationMsM2}
+            sampleIntervalMs={sampleIntervalMsM2}
             samples={stepSamplesM2}
             onStepChange={setStepValueM2}
             onDurationChange={setStepDurationMsM2}
+            onSampleIntervalChange={setSampleIntervalMsM2}
             onStart={() => startStepCapture(2)}
             onStop={() => stopStepCapture(2)}
             onClear={() => clearStepSamples(2)}
@@ -576,6 +602,7 @@ function App() {
             stepOffsetMs={stepOffsetMsM2}
             onOffsetChange={setStepOffsetMsM2}
           />
+          <FrequencyResponseSection driveEnabled={driveEnabled} motorIndex={2} />
         </div>
       </section>
     </main>

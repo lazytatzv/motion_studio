@@ -13,9 +13,11 @@ interface StepResponseSectionProps {
   motorIndex: 1 | 2;
   stepValue: number;
   durationMs: number;
+  sampleIntervalMs: number;
   samples: StepSample[];
   onStepChange: (value: number) => void;
   onDurationChange: (value: number) => void;
+  onSampleIntervalChange: (value: number) => void;
   onStart: () => void;
   onStop: () => void;
   onClear: () => void;
@@ -88,9 +90,11 @@ export function StepResponseSection({
   motorIndex,
   stepValue,
   durationMs,
+  sampleIntervalMs,
   samples,
   onStepChange,
   onDurationChange,
+  onSampleIntervalChange,
   onStart,
   onStop,
   onClear,
@@ -162,6 +166,23 @@ export function StepResponseSection({
               step={100}
               value={durationMs}
               onChange={(e) => onDurationChange(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className={styles.labelClass}>Sample Interval (ms)</label>
+            <input
+              className={styles.inputClass}
+              type="number"
+              min={10}
+              max={1000}
+              step={10}
+              value={sampleIntervalMs}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 0;
+                const clamped = Math.max(10, Math.min(1000, v));
+                onSampleIntervalChange(clamped);
+              }}
             />
           </div>
         </div>

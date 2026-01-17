@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use serialport::SerialPort; // trait??
 use serde_json::Value as JsonValue;
+use serde::Serialize;
 
 const SIMULATED_PORT: &str = "SIMULATED";
 
@@ -46,19 +47,26 @@ static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m1_vel: 0.0,
     m2_vel: 0.0,
     last_update: None,
-    tau_m1: 0.25_f32,
-    gain_m1: 120.0_f32,
-    tau_m2: 0.25_f32,
-    gain_m2: 120.0_f32,
+    // More realistic defaults for professional use: ~100 ms time constant, 100 pps gain
+    tau_m1: 0.10_f32,
+    gain_m1: 100.0_f32,
+    tau_m2: 0.10_f32,
+    gain_m2: 100.0_f32,
 }));
 
 fn sim_update(sim: &mut SimState) {
     let now = Instant::now();
     let dt = if let Some(last) = sim.last_update {
         let raw_dt = (now - last).as_secs_f32();
-        let min_dt = 0.05_f32; // 50ms minimum step
-        let max_dt = 0.2_f32;
-        raw_dt.clamp(min_dt, max_dt)
+        // Clamp maximum timestep to avoid very large jumps; allow small dt values
+        let max_dt = 0.2_f32; // 200 ms
+        let dt_total = raw_dt.clamp(0.0_f32, max_dt);
+        if dt_total <= 1e-6_f32 {
+            // nothing to do
+            sim.last_update = Some(now);
+            return;
+        }
+        dt_total
     } else {
         sim.last_update = Some(now);
         return;
@@ -83,8 +91,14 @@ fn sim_update(sim: &mut SimState) {
     let m1_target = gain_m1 * m1_u;
     let m2_target = gain_m2 * m2_u;
 
-    sim.m1_vel += (dt / tau_m1) * (m1_target - sim.m1_vel);
-    sim.m2_vel += (dt / tau_m2) * (m2_target - sim.m2_vel);
+    // Integrate using smaller sub-steps for numerical stability when dt is large
+    let sub_step = 0.01_f32; // 10 ms internal integration step
+    let steps = (dt / sub_step).ceil() as u32;
+    let sub_dt = dt / (steps as f32);
+    for _ in 0..steps {
+        sim.m1_vel += (sub_dt / tau_m1) * (m1_target - sim.m1_vel);
+        sim.m2_vel += (sub_dt / tau_m2) * (m2_target - sim.m2_vel);
+    }
 
     sim.last_update = Some(now);
 }
@@ -577,6 +591,69 @@ async fn run_step_response_async(motor_index: u8, step_value: u8, duration_ms: u
     .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
+// Run a step response on a real device: send stop, wait, apply step, sample via read_speed
+#[tauri::command]
+async fn run_step_response_device_async(motor_index: u8, step_value: u8, duration_ms: u32, sample_interval_ms: u32, apply_delay_ms: u32) -> Result<Vec<(i64, i32, i32)>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results: Vec<(i64, i32, i32)> = Vec::new();
+
+        // If simulation is enabled, we shouldn't run on device
+        if is_simulation_enabled() {
+            return Err("Simulation mode is enabled; disable to run on device".to_string());
+        }
+
+        // initial stop
+        drive_simply(64, motor_index)?;
+
+        // settle before sampling
+        let settle = Duration::from_millis(200);
+        std::thread::sleep(settle);
+
+        let apply_delay = Duration::from_millis(apply_delay_ms as u64);
+        let start = Instant::now();
+
+        let sample_interval = Duration::from_millis(sample_interval_ms as u64);
+        let total_duration = Duration::from_millis(duration_ms as u64);
+
+        let step_apply_time = start + apply_delay;
+        let end_time = step_apply_time + total_duration;
+
+        let mut now = Instant::now();
+        let mut applied = false;
+        while now <= end_time {
+            if !applied && now >= step_apply_time {
+                // apply step
+                drive_simply(step_value, motor_index)?;
+                applied = true;
+            }
+
+            // read speed from device (this will lock ROBOCLAW and talk serial)
+            let vel = match read_speed(motor_index) {
+                Ok(v) => v,
+                Err(e) => {
+                    // on read error, push a NaN-like marker (-9999) and continue
+                    eprintln!("[STEP DEVICE] read_speed error: {}", e);
+                    -9999
+                }
+            };
+
+            let t_rel = now.duration_since(start).as_millis() as i64;
+            let cmd_now = if applied { step_value as i32 } else { 64 as i32 };
+            results.push((t_rel, vel, cmd_now));
+
+            std::thread::sleep(sample_interval);
+            now = Instant::now();
+        }
+
+        // after end, issue stop
+        drive_simply(64, motor_index)?;
+
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("Failed to join: {:?}", e))?
+}
+
 #[tauri::command]
 fn set_sim_params(motor_index: u8, tau: f32, gain: f32) -> Result<(), String> {
     let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
@@ -640,6 +717,129 @@ fn set_sim_params_js(params: JsonValue) -> Result<(), String> {
     println!("[SIM JS] parsed motor={}, tau={}, gain={}", motor_i, tau, gain);
 
     set_sim_params(motor_i as u8, tau, gain)
+}
+
+#[derive(Serialize)]
+struct FrfPoint {
+    freq_hz: f64,
+    gain: f64,
+    phase_deg: f64,
+}
+
+// Frequency response: perform per-frequency sine tests (steady-state fit)
+#[tauri::command]
+async fn run_frequency_response_async(
+    motor_index: u8,
+    start_hz: f64,
+    end_hz: f64,
+    points: u32,
+    amplitude_cmd: f32,
+    cycles: u32,
+    sample_interval_ms: u32,
+) -> Result<Vec<FrfPoint>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if points == 0 {
+            return Err("points must be > 0".to_string());
+        }
+
+        let mut results: Vec<FrfPoint> = Vec::new();
+
+        // create frequency vector (linear)
+        let pts = points as usize;
+        for i in 0..pts {
+            let frac = if pts == 1 { 0.0 } else { i as f64 / (pts - 1) as f64 };
+            let freq = start_hz + frac * (end_hz - start_hz);
+            if freq <= 0.0 {
+                results.push(FrfPoint { freq_hz: freq, gain: 0.0, phase_deg: 0.0 });
+                continue;
+            }
+
+            let sample_interval = Duration::from_millis(sample_interval_ms as u64);
+            let fs = 1000.0 / (sample_interval_ms as f64);
+
+            // how many samples to collect for given cycles
+            let samples_per_cycle = (fs / freq).round() as usize;
+            let n_samples = (samples_per_cycle * (cycles as usize)).max(3);
+
+            // settle
+            std::thread::sleep(Duration::from_millis(200));
+
+            // Collect samples
+            let mut s_sum = 0.0_f64;
+            let mut c_sum = 0.0_f64;
+            let mut count = 0_usize;
+
+            let omega = 2.0 * std::f64::consts::PI * freq;
+            let t0 = Instant::now();
+
+            for k in 0..n_samples {
+                let now = Instant::now();
+                let t = now.duration_since(t0).as_secs_f64();
+                let sinref = (omega * t).sin();
+                let cosref = (omega * t).cos();
+
+                // compute command (centered at 64)
+                let cmdf = 64.0 + (amplitude_cmd as f64) * sinref;
+                let cmdu = cmdf.round().clamp(0.0, 127.0) as u8;
+
+                if is_simulation_enabled() {
+                    let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+                    if motor_index == 1 {
+                        sim.m1_speed = cmdu;
+                        sim.m1_mode_pwm = false;
+                    } else {
+                        sim.m2_speed = cmdu;
+                        sim.m2_mode_pwm = false;
+                    }
+                    sim_update(&mut sim);
+                } else {
+                    // send to device
+                    drive_simply(cmdu, motor_index)?;
+                }
+
+                // read velocity
+                let vel = match read_speed(motor_index) {
+                    Ok(v) => v as f64,
+                    Err(_) => {
+                        // treat as zero on error
+                        0.0
+                    }
+                };
+
+                // accumulate projection onto sin/cos to estimate amplitude/phase
+                s_sum += vel * sinref;
+                c_sum += vel * cosref;
+                count += 1;
+
+                std::thread::sleep(sample_interval);
+            }
+
+            // compute amplitude and phase from projections
+            let n = count as f64;
+            let a_out = 2.0 * (s_sum * s_sum + c_sum * c_sum).sqrt() / n; // amplitude of output
+            let phase = (c_sum).atan2(s_sum); // radians, relative to sin ref
+
+            // compute input amplitude in velocity units if sim, else in command units
+            let amplitude_in_velocity = if is_simulation_enabled() {
+                let sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+                let gain = if motor_index == 1 { sim.gain_m1 } else { sim.gain_m2 } as f64;
+                gain * (amplitude_cmd as f64 / 63.0)
+            } else {
+                // for device, return per-command-unit gain (velocity per command unit)
+                amplitude_cmd as f64
+            };
+
+            let gain = if amplitude_in_velocity.abs() > 1e-6 {
+                a_out / amplitude_in_velocity
+            } else { 0.0 };
+
+            results.push(FrfPoint { freq_hz: freq, gain, phase_deg: phase.to_degrees() });
+        }
+
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
 #[tauri::command]
@@ -875,7 +1075,9 @@ pub fn run() {
             drive_simply_async,
             drive_pwm_async,
             read_speed_async,
+            run_frequency_response_async,
             run_step_response_async,
+            run_step_response_device_async,
             read_motor_currents_async,
             read_pwm_values_async,
             reset_encoder_async,
