@@ -21,6 +21,11 @@ packaging/aur/*.pkg.tar.zst
 packaging/aur/*.pkg.tar.zst.sig
 packaging/aur/*.log
 
+# APT repo artifacts
+packaging/apt/repo/
+packaging/apt/*.deb
+*.deb
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
