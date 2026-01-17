@@ -1,0 +1,15 @@
+Package: roboclaw-studio
+Version: 0.1.0
+Architecture: amd64
+Maintainer: you
+Installed-Size: 12966
+Depends: libwebkit2gtk-4.1-0, libgtk-3-0
+Filename: pool/main/roboclaw-studio_0.1.0_amd64.deb
+Size: 4151866
+MD5sum: 1a823db76b7739b977ba3e526a52a9a7
+SHA1: 98e508a485114d64ae6b9559588f4b9f94240d73
+SHA256: eb7a61731eb14b9a02938305cb87dafac35e9de3bab056aea10e486f7f2a2b61
+Priority: optional
+Description: A Tauri App
+ (none)
+
