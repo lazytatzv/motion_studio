@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 
 use serialport::SerialPort; // trait??
 use serde_json::Value as JsonValue;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
+use serde_json::json;
 
 const SIMULATED_PORT: &str = "SIMULATED";
 
@@ -726,6 +727,139 @@ struct FrfPoint {
     phase_deg: f64,
 }
 
+#[derive(Deserialize)]
+struct StepSample {
+    t_ms: f64,
+    vel: f64,
+    cmd: f64,
+}
+
+#[tauri::command]
+async fn estimate_tf_from_step(samples: Vec<StepSample>) -> Result<JsonValue, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if samples.len() < 5 {
+            return Err("Need at least 5 samples to estimate".to_string());
+        }
+
+        // Determine baseline command (assume earliest stable cmd is baseline)
+        let first_cmd = samples.first().unwrap().cmd;
+
+        // Find step index: first sample where cmd differs from initial command by > 0.5
+        let step_idx_opt = samples.iter().position(|s| (s.cmd - first_cmd).abs() > 0.5);
+        let step_idx = match step_idx_opt {
+            Some(i) => i,
+            None => return Err("Could not locate step in samples".to_string()),
+        };
+
+        let t0_ms = samples[step_idx].t_ms;
+
+        // baseline velocity: average of samples before step_idx
+        let pre_samples: Vec<f64> = samples.iter().take(step_idx).map(|s| s.vel).collect();
+        let y0 = if pre_samples.len() > 0 {
+            pre_samples.iter().sum::<f64>() / (pre_samples.len() as f64)
+        } else {
+            samples[0].vel
+        };
+
+        // steady-state velocity: average of last 20% of samples
+        let n = samples.len();
+        let tail_start = (n as f64 * 0.8).floor() as usize;
+        let tail_vals: Vec<f64> = samples.iter().skip(tail_start).map(|s| s.vel).collect();
+        let y_inf = if tail_vals.len() > 0 {
+            tail_vals.iter().sum::<f64>() / (tail_vals.len() as f64)
+        } else {
+            samples.last().unwrap().vel
+        };
+
+        // command change: use mean cmd in tail region minus initial command
+        let cmd_initial = first_cmd;
+        let cmd_final = samples.iter().skip(tail_start).map(|s| s.cmd).sum::<f64>() / (tail_vals.len() as f64).max(1.0);
+        let delta_cmd = cmd_final - cmd_initial;
+        if delta_cmd.abs() < 1e-6 {
+            return Err("Command change too small to estimate".to_string());
+        }
+
+        // Estimate static gain K (velocity per command unit)
+        let k = (y_inf - y0) / delta_cmd;
+
+        // Prepare data for exponential fit: y(t) = y_inf + (y0 - y_inf) * exp(-t/τ)
+        let mut xs: Vec<f64> = Vec::new();
+        let mut ys: Vec<f64> = Vec::new();
+        for s in samples.iter().skip(step_idx) {
+            let t = (s.t_ms - t0_ms) / 1000.0; // seconds relative to step
+            xs.push(t);
+            ys.push(s.vel - y_inf);
+        }
+
+        // Linearize using ln(|y - y_inf|) = ln(|y0 - y_inf|) - t/τ
+        let mut lnys: Vec<f64> = Vec::new();
+        let mut tvec: Vec<f64> = Vec::new();
+        for (i, &val) in ys.iter().enumerate() {
+            if val.abs() < 1e-6 { continue; }
+            lnys.push(val.abs().ln());
+            tvec.push(xs[i]);
+        }
+
+        if lnys.len() < 3 {
+            // fallback: use time-to-63% rule
+            let target = y0 + 0.632 * (y_inf - y0);
+            let mut t63 = None;
+            for s in samples.iter().skip(step_idx) {
+                if (s.vel - target).abs() <= 1e-3 || ((y_inf - y0) > 0.0 && s.vel >= target) || ((y_inf - y0) < 0.0 && s.vel <= target) {
+                    t63 = Some((s.t_ms - t0_ms) / 1000.0);
+                    break;
+                }
+            }
+            if let Some(t63v) = t63 {
+                let tau = t63v;
+                let result = json!({"K": k, "tau_s": tau, "y0": y0, "y_inf": y_inf, "step_time_s": t0_ms/1000.0});
+                return Ok(result);
+            } else {
+                return Err("Insufficient data to estimate tau".to_string());
+            }
+        }
+
+        // linear regression slope = -1/τ
+        let nln = lnys.len() as f64;
+        let mean_t = tvec.iter().sum::<f64>() / nln;
+        let mean_ln = lnys.iter().sum::<f64>() / nln;
+        let mut num = 0.0_f64;
+        let mut den = 0.0_f64;
+        for i in 0..(lnys.len()) {
+            num += (tvec[i] - mean_t) * (lnys[i] - mean_ln);
+            den += (tvec[i] - mean_t) * (tvec[i] - mean_t);
+        }
+        if den.abs() < 1e-12 {
+            return Err("Regression failed (denominator zero)".to_string());
+        }
+        let slope = num / den;
+        let tau = -1.0 / slope;
+
+        // compute r^2 for fit
+        let mut ss_tot = 0.0_f64;
+        let mut ss_res = 0.0_f64;
+        for i in 0..(lnys.len()) {
+            let pred = mean_ln + slope * (tvec[i] - mean_t);
+            ss_res += (lnys[i] - pred) * (lnys[i] - pred);
+            ss_tot += (lnys[i] - mean_ln) * (lnys[i] - mean_ln);
+        }
+        let r2 = if ss_tot.abs() < 1e-12 { 1.0 } else { 1.0 - ss_res / ss_tot };
+
+        let result = json!({
+            "K": k,
+            "tau_s": tau,
+            "y0": y0,
+            "y_inf": y_inf,
+            "step_time_s": t0_ms/1000.0,
+            "r2": r2
+        });
+
+        Ok(result)
+    })
+    .await
+    .map_err(|e| format!("Thread join error: {:?}", e))?
+}
+
 // Frequency response: perform per-frequency sine tests (steady-state fit)
 #[tauri::command]
 async fn run_frequency_response_async(
@@ -1087,6 +1221,7 @@ pub fn run() {
             set_simulation_mode,
             set_sim_params,
             set_sim_params_js,
+            estimate_tf_from_step,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
