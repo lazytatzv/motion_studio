@@ -5,6 +5,9 @@ import "./App.css";
 const SPEED_MIN = 0;
 const SPEED_STOP = 64;
 const SPEED_MAX = 127;
+const PWM_MIN = -32767;
+const PWM_ZERO = 0;
+const PWM_MAX = 32767;
 
 function App() {
   //const [count, setCount] = useState<number>(0);
@@ -34,8 +37,12 @@ function App() {
   const [currentM2, setCurrentM2] = useState<number>(0);
 
   // Current motor pwm
-  const [pwmM1, setPwmM1] = useState<number>(0);
-  const [pwmM2, setPwmM2] = useState<number>(0);
+  const [pwmReadM1, setPwmReadM1] = useState<number>(0);
+  const [pwmReadM2, setPwmReadM2] = useState<number>(0);
+
+  // PWM command values
+  const [pwmCmdM1, setPwmCmdM1] = useState<number>(PWM_ZERO);
+  const [pwmCmdM2, setPwmCmdM2] = useState<number>(PWM_ZERO);
  
   
   // ===== Event Handler ==================================
@@ -57,31 +64,49 @@ function App() {
     //console.log(motorSpeedM2);
   }
 
+  const handleDrivePwm = async (motorIndex: 1 | 2, pwm: number) => {
+    if (motorIndex === 1) {
+      setPwmCmdM1(pwm);
+    } else {
+      setPwmCmdM2(pwm);
+    }
+    await invoke("drive_pwm_async", { pwm, motorIndex });
+  }
+
+  const handlePresetSpeed = async (motorIndex: 1 | 2, speed: number) => {
+    if (motorIndex === 1) {
+      setMotorSpeedM1(speed);
+    } else {
+      setMotorSpeedM2(speed);
+    }
+    await invoke("drive_simply_async", { speed, motorIndex });
+  }
+
   // Stop motors
   const handleStopM1 = async () => {
-    await invoke("drive_simply_async", { speed: SPEED_STOP as number, motorIndex: 1 });
+    await handlePresetSpeed(1, SPEED_STOP as number);
   }
 
   const handleStopM2 = async() => {
-    await invoke("drive_simply_async", { speed: SPEED_STOP as number, motorIndex: 2 });
+    await handlePresetSpeed(2, SPEED_STOP as number);
   }
 
   // Drive Clockwise with Max speed
   const handleMaxCwM1 = async () => {
-    await invoke("drive_simply_async", { speed: SPEED_MAX as number, motorIndex: 1 });
+    await handlePresetSpeed(1, SPEED_MAX as number);
   }
 
   const handleMaxCwM2 = async () => {
-    await invoke("drive_simply_async", { speed: SPEED_MAX as number, motorIndex: 2 });
+    await handlePresetSpeed(2, SPEED_MAX as number);
   }
 
   // Drive Counter Clockwise with Max speed
   const handleMaxCcwM1 = async () => {
-    await invoke("drive_simply_async", { speed: SPEED_MIN as number, motorIndex: 1 });
+    await handlePresetSpeed(1, SPEED_MIN as number);
   }
 
   const handleMaxCcwM2 = async () => {
-    await invoke("drive_simply_async", { speed: SPEED_MIN as number, motorIndex: 2 });
+    await handlePresetSpeed(2, SPEED_MIN as number);
   }
 
 
@@ -170,8 +195,8 @@ function App() {
 	const interval = setInterval(async () => {
 		try {
 			const [m1_pwm, m2_pwm] = await invoke("read_pwm_values_async") as [number, number];
-			setPwmM1(m1_pwm);
-			setPwmM2(m2_pwm);
+      setPwmReadM1(m1_pwm);
+      setPwmReadM2(m2_pwm);
 		} catch {}
 	}, 300);
 
@@ -210,7 +235,7 @@ function App() {
       <section className="section">
         <div className="section-header">
           <div>
-            <h2 className="section-title">Drive</h2>
+            <h2 className="section-title">Open Velocity Drive</h2>
             <p className="section-subtitle">
               Open-loop speed (no encoder). {SPEED_MIN}=CCW max, {SPEED_STOP}=stop, {SPEED_MAX}=CW max
             </p>
@@ -238,8 +263,8 @@ function App() {
               </div>
               <div className="button-row">
                 <button className="btn btn-danger" onClick={handleStopM1} disabled={!driveEnabled}>Stop</button>
-                <button className="btn btn-ghost" onClick={handleMaxCwM1} disabled={!driveEnabled}>CW Max</button>
-                <button className="btn btn-ghost" onClick={handleMaxCcwM1} disabled={!driveEnabled}>CCW Max</button>
+                <button className="btn btn-ghost" onClick={handleMaxCwM1} disabled={!driveEnabled}>Set CW Max</button>
+                <button className="btn btn-ghost" onClick={handleMaxCcwM1} disabled={!driveEnabled}>Set CCW Max</button>
               </div>
             </div>
           </div>
@@ -265,8 +290,72 @@ function App() {
               </div>
               <div className="button-row">
                 <button className="btn btn-danger" onClick={handleStopM2} disabled={!driveEnabled}>Stop</button>
-                <button className="btn btn-ghost" onClick={handleMaxCwM2} disabled={!driveEnabled}>CW Max</button>
-                <button className="btn btn-ghost" onClick={handleMaxCcwM2} disabled={!driveEnabled}>CCW Max</button>
+                <button className="btn btn-ghost" onClick={handleMaxCwM2} disabled={!driveEnabled}>Set CW Max</button>
+                <button className="btn btn-ghost" onClick={handleMaxCcwM2} disabled={!driveEnabled}>Set CCW Max</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-header">
+          <div>
+            <h2 className="section-title">PWM Drive</h2>
+            <p className="section-subtitle">Direct PWM duty control ({PWM_MIN} to {PWM_MAX})</p>
+          </div>
+        </div>
+        <div className="grid grid-2">
+          <div className="card">
+            <div className="card-title">Motor 1</div>
+            <div className="card-body">
+              <label className="label" htmlFor="pwm-m1">PWM Duty</label>
+              <div className="control-row">
+                <input
+                  id="pwm-m1"
+                  className="input range"
+                  type="range"
+                  min={PWM_MIN}
+                  max={PWM_MAX}
+                  step={1}
+                  disabled={!driveEnabled}
+                  value={pwmCmdM1}
+                  onChange={(e) => setPwmCmdM1(Number(e.target.value))}
+                />
+                <div className="range-value">{pwmCmdM1}</div>
+                <button className="btn btn-primary" onClick={() => handleDrivePwm(1, pwmCmdM1)} disabled={!driveEnabled}>Apply PWM</button>
+              </div>
+              <div className="button-row">
+                <button className="btn btn-danger" onClick={() => handleDrivePwm(1, PWM_ZERO)} disabled={!driveEnabled}>Zero</button>
+                <button className="btn btn-ghost" onClick={() => handleDrivePwm(1, PWM_MAX)} disabled={!driveEnabled}>Set +Max</button>
+                <button className="btn btn-ghost" onClick={() => handleDrivePwm(1, PWM_MIN)} disabled={!driveEnabled}>Set -Max</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-title">Motor 2</div>
+            <div className="card-body">
+              <label className="label" htmlFor="pwm-m2">PWM Duty</label>
+              <div className="control-row">
+                <input
+                  id="pwm-m2"
+                  className="input range"
+                  type="range"
+                  min={PWM_MIN}
+                  max={PWM_MAX}
+                  step={1}
+                  disabled={!driveEnabled}
+                  value={pwmCmdM2}
+                  onChange={(e) => setPwmCmdM2(Number(e.target.value))}
+                />
+                <div className="range-value">{pwmCmdM2}</div>
+                <button className="btn btn-primary" onClick={() => handleDrivePwm(2, pwmCmdM2)} disabled={!driveEnabled}>Apply PWM</button>
+              </div>
+              <div className="button-row">
+                <button className="btn btn-danger" onClick={() => handleDrivePwm(2, PWM_ZERO)} disabled={!driveEnabled}>Zero</button>
+                <button className="btn btn-ghost" onClick={() => handleDrivePwm(2, PWM_MAX)} disabled={!driveEnabled}>Set +Max</button>
+                <button className="btn btn-ghost" onClick={() => handleDrivePwm(2, PWM_MIN)} disabled={!driveEnabled}>Set -Max</button>
               </div>
             </div>
           </div>
@@ -381,12 +470,12 @@ function App() {
           </div>
           <div className="stat-card">
             <div className="stat-label">M1 PWM</div>
-            <div className="stat-value">{pwmM1}</div>
+            <div className="stat-value">{pwmReadM1}</div>
             <div className="stat-unit">raw</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">M2 PWM</div>
-            <div className="stat-value">{pwmM2}</div>
+            <div className="stat-value">{pwmReadM2}</div>
             <div className="stat-unit">raw</div>
           </div>
         </div>

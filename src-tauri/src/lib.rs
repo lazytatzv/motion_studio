@@ -19,12 +19,16 @@ pub struct Roboclaw {
 struct SimState {
     m1_speed: u8,
     m2_speed: u8,
+    m1_pwm: i16,
+    m2_pwm: i16,
 }
 
 static SIMULATION_ENABLED: AtomicBool = AtomicBool::new(false);
 static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m1_speed: 64,
     m2_speed: 64,
+    m1_pwm: 0,
+    m2_pwm: 0,
 }));
 
 fn is_simulation_enabled() -> bool {
@@ -290,6 +294,55 @@ fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
     }
 }
 
+// Drive motor with a raw PWM duty command (signed 16-bit)
+fn drive_pwm(pwm: i16, motor_index: u8) -> Result<(), String> {
+    if is_simulation_enabled() {
+        let mut sim = SIM_STATE
+            .lock()
+            .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        if motor_index == 1 {
+            sim.m1_pwm = pwm;
+        } else if motor_index == 2 {
+            sim.m2_pwm = pwm;
+        }
+        return Ok(());
+    }
+
+    let mut guard = ROBOCLAW.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    let mut roboclaw = guard.as_mut().ok_or("Roboclaw not initialized")?;
+
+    let pwm = pwm.clamp(-32767, 32767);
+
+    // Duty M1 -> 32, Duty M2 -> 33
+    let cmd = if motor_index == 1 { 32 } else { 33 };
+
+    let mut data: Vec<u8> = Vec::new();
+    data.push(roboclaw.addr);
+    data.push(cmd);
+    data.push(((pwm >> 8) & 0xFF) as u8);
+    data.push((pwm & 0xFF) as u8);
+
+    let crc = calc_crc(&data);
+    data.push((crc >> 8) as u8);
+    data.push((crc & 0xFF) as u8);
+
+    let response = send_and_read(&data, &mut roboclaw)?;
+
+    if response.get(0) == Some(&0xFF) {
+        Ok(())
+    } else {
+        Err("Failed to drive motor PWM".to_string())
+    }
+}
+
+#[tauri::command]
+async fn drive_pwm_async(pwm: i16, motor_index: u8) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || drive_pwm(pwm, motor_index))
+        .await
+        .map_err(|e| format!("Thread join error: {:?}", e))?
+}
+
 // Blocking would freeze the UI
 #[tauri::command]
 async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
@@ -304,8 +357,17 @@ fn read_speed(motor_index: u8) -> Result<i32, String> {
         let sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
-        let speed = if motor_index == 1 { sim.m1_speed } else { sim.m2_speed };
-        let signed = speed as i32 - 64;
+        let (speed, pwm) = if motor_index == 1 {
+            (sim.m1_speed, sim.m1_pwm)
+        } else {
+            (sim.m2_speed, sim.m2_pwm)
+        };
+        let signed = if pwm != 0 {
+            let pwm_delta = (pwm / 500).clamp(-63, 63);
+            pwm_delta as i32
+        } else {
+            speed as i32 - 64
+        };
         return Ok(signed * 10);
     }
 
@@ -380,8 +442,16 @@ fn read_motor_currents() -> Result<(u32, u32), String> {
         let sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
-        let m1_delta = (sim.m1_speed as i32 - 64).abs() as u32;
-        let m2_delta = (sim.m2_speed as i32 - 64).abs() as u32;
+        let m1_delta = if sim.m1_pwm != 0 {
+            (sim.m1_pwm.abs() as u32) / 500
+        } else {
+            (sim.m1_speed as i32 - 64).abs() as u32
+        };
+        let m2_delta = if sim.m2_pwm != 0 {
+            (sim.m2_pwm.abs() as u32) / 500
+        } else {
+            (sim.m2_speed as i32 - 64).abs() as u32
+        };
         let m1_current = m1_delta * 20;
         let m2_current = m2_delta * 20;
         return Ok((m1_current, m2_current));
@@ -444,11 +514,7 @@ fn read_pwm_values() -> Result<(i32, i32), String> {
         let sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
-        let m1_signed = sim.m1_speed as i32 - 64;
-        let m2_signed = sim.m2_speed as i32 - 64;
-        let m1_pwm = (m1_signed * 500).clamp(-32767, 32767);
-        let m2_pwm = (m2_signed * 500).clamp(-32767, 32767);
-        return Ok((m1_pwm, m2_pwm));
+        return Ok((sim.m1_pwm as i32, sim.m2_pwm as i32));
     }
     
     let mut guard = ROBOCLAW.lock()
@@ -519,6 +585,8 @@ fn reset_encoder() -> Result<(), String> {
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
         sim.m1_speed = 64;
         sim.m2_speed = 64;
+        sim.m1_pwm = 0;
+        sim.m2_pwm = 0;
         return Ok(());
     }
  
@@ -587,6 +655,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![ // Register functions invoked from the frontend
             drive_simply_async,
+            drive_pwm_async,
             read_speed_async,
             read_motor_currents_async,
             read_pwm_values_async,
