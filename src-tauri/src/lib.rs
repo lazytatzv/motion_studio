@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serialport::SerialPort; // trait??
 
@@ -22,6 +22,11 @@ struct SimState {
     m2_speed: u8,
     m1_pwm: i16,
     m2_pwm: i16,
+    m1_mode_pwm: bool,
+    m2_mode_pwm: bool,
+    m1_vel: f32,
+    m2_vel: f32,
+    last_update: Option<Instant>,
 }
 
 static SIMULATION_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -30,7 +35,47 @@ static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m2_speed: 64,
     m1_pwm: 0,
     m2_pwm: 0,
+    m1_mode_pwm: false,
+    m2_mode_pwm: false,
+    m1_vel: 0.0,
+    m2_vel: 0.0,
+    last_update: None,
 }));
+
+fn sim_update(sim: &mut SimState) {
+    let now = Instant::now();
+    let dt = if let Some(last) = sim.last_update {
+        let raw_dt = (now - last).as_secs_f32();
+        let min_dt = 0.05_f32; // 50ms minimum step
+        let max_dt = 0.2_f32;
+        raw_dt.clamp(min_dt, max_dt)
+    } else {
+        sim.last_update = Some(now);
+        return;
+    };
+
+    let tau = 0.25_f32;
+    let max_vel = 120.0_f32;
+
+    let m1_u = if sim.m1_mode_pwm {
+        (sim.m1_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
+    } else {
+        ((sim.m1_speed as f32 - 64.0) / 63.0).clamp(-1.0, 1.0)
+    };
+    let m2_u = if sim.m2_mode_pwm {
+        (sim.m2_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
+    } else {
+        ((sim.m2_speed as f32 - 64.0) / 63.0).clamp(-1.0, 1.0)
+    };
+
+    let m1_target = max_vel * m1_u;
+    let m2_target = max_vel * m2_u;
+
+    sim.m1_vel += (dt / tau) * (m1_target - sim.m1_vel);
+    sim.m2_vel += (dt / tau) * (m2_target - sim.m2_vel);
+
+    sim.last_update = Some(now);
+}
 
 fn is_simulation_enabled() -> bool {
     SIMULATION_ENABLED.load(Ordering::Relaxed)
@@ -256,10 +301,13 @@ fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
         let mut sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        sim_update(&mut sim);
         if motor_index == 1 {
             sim.m1_speed = speed;
+            sim.m1_mode_pwm = false;
         } else if motor_index == 2 {
             sim.m2_speed = speed;
+            sim.m2_mode_pwm = false;
         }
         return Ok(());
     }
@@ -316,10 +364,13 @@ fn drive_pwm(pwm: i16, motor_index: u8) -> Result<(), String> {
         let mut sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        sim_update(&mut sim);
         if motor_index == 1 {
             sim.m1_pwm = pwm;
+            sim.m1_mode_pwm = true;
         } else if motor_index == 2 {
             sim.m2_pwm = pwm;
+            sim.m2_mode_pwm = true;
         }
         return Ok(());
     }
@@ -370,21 +421,12 @@ async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
 // Read encoder value in pulses per second
 fn read_speed(motor_index: u8) -> Result<i32, String> {
     if is_simulation_enabled() {
-        let sim = SIM_STATE
+        let mut sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
-        let (speed, pwm) = if motor_index == 1 {
-            (sim.m1_speed, sim.m1_pwm)
-        } else {
-            (sim.m2_speed, sim.m2_pwm)
-        };
-        let signed = if pwm != 0 {
-            let pwm_delta = (pwm / 500).clamp(-63, 63);
-            pwm_delta as i32
-        } else {
-            speed as i32 - 64
-        };
-        return Ok(signed * 10);
+        sim_update(&mut sim);
+        let vel = if motor_index == 1 { sim.m1_vel } else { sim.m2_vel };
+        return Ok(vel.round() as i32);
     }
 
     // println!("The read_speed is called");
@@ -446,6 +488,83 @@ fn read_speed(motor_index: u8) -> Result<i32, String> {
     };
 }
 
+// Run a step response entirely in the Rust sim and return sampled data
+#[tauri::command]
+async fn run_step_response_async(motor_index: u8, step_value: u8, duration_ms: u32, sample_interval_ms: u32, apply_delay_ms: u32) -> Result<Vec<(i64, i32, i32)>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results: Vec<(i64, i32, i32)> = Vec::new();
+
+        if !is_simulation_enabled() {
+            return Err("Simulation mode not enabled".to_string());
+        }
+
+        let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+
+        // Initialize sim state
+        sim.m1_speed = 64;
+        sim.m2_speed = 64;
+        sim.m1_pwm = 0;
+        sim.m2_pwm = 0;
+        sim.m1_mode_pwm = false;
+        sim.m2_mode_pwm = false;
+        sim.m1_vel = 0.0;
+        sim.m2_vel = 0.0;
+        sim.last_update = Some(Instant::now());
+
+        // settle before sampling
+        let settle = Duration::from_millis(200);
+        std::thread::sleep(settle);
+
+        // sampling loop: start sampling, then apply step after requested apply_delay
+        let apply_delay = Duration::from_millis(apply_delay_ms as u64);
+        let start = Instant::now();
+
+        let sample_interval = Duration::from_millis(sample_interval_ms as u64);
+        let total_duration = Duration::from_millis(duration_ms as u64);
+
+        let step_apply_time = start + apply_delay;
+        let end_time = step_apply_time + total_duration;
+
+        let mut now = Instant::now();
+        while now <= end_time {
+            // apply step if reached
+            if now >= step_apply_time {
+                if motor_index == 1 {
+                    sim.m1_speed = step_value;
+                    sim.m1_mode_pwm = false;
+                } else {
+                    sim.m2_speed = step_value;
+                    sim.m2_mode_pwm = false;
+                }
+            }
+
+            sim_update(&mut sim);
+
+            // record time relative to sampling start (non-negative). Frontend will
+            // use the command change time (applyDelay) to position the step.
+            let t_rel = now.duration_since(start).as_millis() as i64;
+            let vel = if motor_index == 1 { sim.m1_vel } else { sim.m2_vel };
+            let cmd_now = if now >= step_apply_time && now < step_apply_time + total_duration { step_value as i32 } else { 64 as i32 };
+            results.push((t_rel, vel.round() as i32, cmd_now));
+
+            std::thread::sleep(sample_interval);
+            now = Instant::now();
+        }
+
+        // after end, issue stop
+        if motor_index == 1 {
+            sim.m1_speed = 64;
+        } else {
+            sim.m2_speed = 64;
+        }
+        sim_update(&mut sim);
+
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("Failed to join: {:?}", e))?
+}
+
 #[tauri::command]
 async fn read_speed_async(motor_index: u8) -> Result<i32, String> {
     tauri::async_runtime::spawn_blocking(move || read_speed(motor_index))
@@ -455,21 +574,12 @@ async fn read_speed_async(motor_index: u8) -> Result<i32, String> {
 
 fn read_motor_currents() -> Result<(u32, u32), String> {
     if is_simulation_enabled() {
-        let sim = SIM_STATE
+        let mut sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
-        let m1_delta = if sim.m1_pwm != 0 {
-            (sim.m1_pwm.abs() as u32) / 500
-        } else {
-            (sim.m1_speed as i32 - 64).abs() as u32
-        };
-        let m2_delta = if sim.m2_pwm != 0 {
-            (sim.m2_pwm.abs() as u32) / 500
-        } else {
-            (sim.m2_speed as i32 - 64).abs() as u32
-        };
-        let m1_current = m1_delta * 20;
-        let m2_current = m2_delta * 20;
+        sim_update(&mut sim);
+        let m1_current = (sim.m1_vel.abs() * 15.0) as u32;
+        let m2_current = (sim.m2_vel.abs() * 15.0) as u32;
         return Ok((m1_current, m2_current));
     }
 
@@ -527,10 +637,21 @@ async fn read_motor_currents_async() -> Result<(u32, u32), String> {
 
 fn read_pwm_values() -> Result<(i32, i32), String> {
     if is_simulation_enabled() {
-        let sim = SIM_STATE
+        let mut sim = SIM_STATE
             .lock()
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
-        return Ok((sim.m1_pwm as i32, sim.m2_pwm as i32));
+        sim_update(&mut sim);
+        let m1_pwm = if sim.m1_mode_pwm {
+            sim.m1_pwm as i32
+        } else {
+            (sim.m1_vel / 120.0 * 32767.0).clamp(-32767.0, 32767.0) as i32
+        };
+        let m2_pwm = if sim.m2_mode_pwm {
+            sim.m2_pwm as i32
+        } else {
+            (sim.m2_vel / 120.0 * 32767.0).clamp(-32767.0, 32767.0) as i32
+        };
+        return Ok((m1_pwm, m2_pwm));
     }
     
     let mut guard = ROBOCLAW.lock()
@@ -603,6 +724,10 @@ fn reset_encoder() -> Result<(), String> {
         sim.m2_speed = 64;
         sim.m1_pwm = 0;
         sim.m2_pwm = 0;
+        sim.m1_mode_pwm = false;
+        sim.m2_mode_pwm = false;
+        sim.m1_vel = 0.0;
+        sim.m2_vel = 0.0;
         return Ok(());
     }
  
@@ -673,6 +798,7 @@ pub fn run() {
             drive_simply_async,
             drive_pwm_async,
             read_speed_async,
+            run_step_response_async,
             read_motor_currents_async,
             read_pwm_values_async,
             reset_encoder_async,

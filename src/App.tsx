@@ -5,6 +5,7 @@ import { OpenVelocitySection } from "./components/OpenVelocitySection";
 import { PwmSection } from "./components/PwmSection";
 import { ConfigurationSection } from "./components/ConfigurationSection";
 import { TelemetrySection } from "./components/TelemetrySection";
+import { StepResponseSection } from "./components/StepResponseSection";
 import { styles } from "./uiStyles";
 
 const SPEED_MIN = 0;
@@ -41,6 +42,8 @@ function App() {
   // Current motor speed fetched by command
   const [velM1, setVelM1] = useState<number>(0);
   const [velM2, setVelM2] = useState<number>(0);
+  const velM1Ref = useRef<number>(0);
+  const velM2Ref = useRef<number>(0);
 
   // Current value
   const [currentM1, setCurrentM1] = useState<number>(0);
@@ -53,6 +56,23 @@ function App() {
   // PWM command values
   const [pwmCmdM1, setPwmCmdM1] = useState<number>(PWM_ZERO);
   const [pwmCmdM2, setPwmCmdM2] = useState<number>(PWM_ZERO);
+
+  const driveEnabled = isConnected || isSimulation;
+
+  // Step response capture
+  const [stepMotor, setStepMotor] = useState<1 | 2>(1);
+  const [stepValue, setStepValue] = useState<number>(SPEED_MAX);
+  const [stepDurationMs, setStepDurationMs] = useState<number>(2000);
+  const [stepOffsetMs, setStepOffsetMs] = useState<number>(150);
+  const [stepSamples, setStepSamples] = useState<
+    { t: number; velM1: number; velM2: number; cmd: number }[]
+  >([]);
+  const [isStepRunning, setIsStepRunning] = useState<boolean>(false);
+  // stepStartRef removed; timing is handled in Rust sim
+  const stepIntervalRef = useRef<number | null>(null);
+  const stepTimeoutRef = useRef<number | null>(null);
+  const stepSamplingStartRef = useRef<number | null>(null);
+  const stepCmdRef = useRef<number>(SPEED_STOP);
  
   
   // ===== Event Handler ==================================
@@ -153,6 +173,7 @@ function App() {
   }
 
   const refreshPorts = useCallback(async () => {
+
     if (document.activeElement === portSelectRef.current) {
       return;
     }
@@ -164,27 +185,33 @@ function App() {
         if (prev.length === ports.length && prev.every((value, index) => value === ports[index])) {
           return prev;
         }
+        // Auto-select first real port if user hasn't manually selected
+        if (!isManualPort && (portName === "")) {
+          const realPorts = ports.filter((p) => p !== SIMULATED_PORT);
+          if (realPorts.length > 0) {
+            setPortName(realPorts[0]);
+          }
+        }
         return ports;
       });
-      if (!isManualPort && portName === "") {
-        const realPorts = ports.filter((port) => port !== SIMULATED_PORT);
-        if (realPorts.length > 0) {
-          setPortName(realPorts[0]);
-        }
-      }
     } catch (error) {
-      setConnectionError(String(error));
+      console.error("Failed to list ports:", error);
     } finally {
       setIsPortRefreshing(false);
-    }
-  }, [isManualPort, portName]);
+    } 
+  }, [stepMotor, stepValue, stepDurationMs, isManualPort, portName]);
 
   const handleListPorts = async () => {
     await refreshPorts();
   }
 
   const handleResetEncoder = async () => {
-    await invoke("reset_encoder_async");
+    try {
+      await invoke("reset_encoder_async");
+      alert("Encoders reset successfully.");
+    } catch (error) {
+      alert(`Failed to reset encoders: ${error}`);
+    }
   }
 
   const handleToggleSimulation = async () => {
@@ -216,17 +243,116 @@ function App() {
   useEffect(() => {
 	const interval = setInterval(async () => {
 		try {
-			const [speed] = await invoke("read_speed_async", { motorIndex: 1}) as [number, number];
-			setVelM1(speed);
+      const speed = await invoke("read_speed_async", { motorIndex: 1 }) as number;
+      setVelM1(speed);
 		} catch {}
 		try {
-			const [speed] = await invoke("read_speed_async", { motorIndex: 2}) as [number, number];
-			setVelM2(speed);
+      const speed = await invoke("read_speed_async", { motorIndex: 2 }) as number;
+      setVelM2(speed);
 		} catch {}
 	}, 300);
 
 	return () => clearInterval(interval);
   }, []);
+
+  // keep refs in sync so closures can read latest values
+  useEffect(() => {
+    velM1Ref.current = velM1;
+  }, [velM1]);
+
+  useEffect(() => {
+    velM2Ref.current = velM2;
+  }, [velM2]);
+
+  const startStepCapture = useCallback(() => {
+    if (isStepRunning || !driveEnabled) return;
+    (async () => {
+      setIsStepRunning(true);
+      setStepSamples([]);
+      stepCmdRef.current = SPEED_STOP;
+
+      try {
+        const sampleInterval = 50;
+        try { console.debug("Invoking run_step_response_async with applyDelayMs:", stepOffsetMs); } catch {}
+        const raw = await invoke("run_step_response_async", {
+          motorIndex: stepMotor,
+          stepValue: stepValue,
+          durationMs: stepDurationMs,
+          sampleIntervalMs: sampleInterval,
+          applyDelayMs: stepOffsetMs,
+        }) as Array<[number, number, number]>;
+
+        // Debug: log raw tuples to help diagnose offset/timestamp behavior
+        try { console.debug("run_step_response_async raw (first 20):", raw.slice(0, 20)); } catch {}
+
+        const mapped = raw.map(([t, vel, cmd]) => ({
+          t,
+          velM1: stepMotor === 1 ? vel : 0,
+          velM2: stepMotor === 2 ? vel : 0,
+          cmd,
+        }));
+
+        try { console.debug("mapped step samples (first 20):", mapped.slice(0, 20)); } catch {}
+        setStepSamples(mapped);
+      } catch (e) {
+        console.error("Step capture failed:", e);
+        alert(`Step capture failed: ${e}`);
+      } finally {
+        setIsStepRunning(false);
+      }
+    })();
+  }, [driveEnabled, stepMotor, stepValue, stepDurationMs, isStepRunning, stepOffsetMs]);
+
+  const stopStepCapture = useCallback(() => {
+    if (stepIntervalRef.current !== null) {
+      clearInterval(stepIntervalRef.current);
+      stepIntervalRef.current = null;
+    }
+    if (stepTimeoutRef.current !== null) {
+      clearTimeout(stepTimeoutRef.current);
+      stepTimeoutRef.current = null;
+    }
+    if (stepSamplingStartRef.current !== null) {
+      clearTimeout(stepSamplingStartRef.current);
+      stepSamplingStartRef.current = null;
+    }
+    stepCmdRef.current = SPEED_STOP;
+    void handlePresetSpeed(stepMotor, SPEED_STOP);
+    setIsStepRunning(false);
+  }, [handlePresetSpeed, stepMotor]);
+
+  const clearStepSamples = useCallback(() => {
+    setStepSamples([]);
+  }, []);
+
+  const exportStepSamples = useCallback(() => {
+    if (stepSamples.length === 0) return;
+    const header = "t_ms,vel_m1,vel_m2,cmd";
+    const rows = stepSamples.map((s) => `${s.t.toFixed(0)},${s.velM1},${s.velM2},${s.cmd}`);
+    const csv = [header, ...rows].join("\n");
+    // Try standard anchor download first; if not available (Tauri webview restrictions),
+    // fall back to copying CSV to clipboard and alerting the user.
+    try {
+      console.debug("exportStepSamples: preparing CSV, rows:", rows.length);
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `step_response_${stepMotor}_${Date.now()}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      try { console.debug("exportStepSamples: download triggered"); } catch {}
+    } catch (e) {
+      try {
+        void navigator.clipboard.writeText(csv);
+        alert("Export failed via download; CSV copied to clipboard instead.");
+        try { console.debug("exportStepSamples: copied to clipboard"); } catch {}
+      } catch (e2) {
+        alert("Failed to export CSV: please open devtools and inspect console for details.");
+        try { console.error("exportStepSamples: failures", e, e2); } catch {}
+      }
+    }
+  }, [stepMotor, stepSamples]);
 
   useEffect(() => {
 	const interval = setInterval(async () => {
@@ -253,8 +379,6 @@ function App() {
   }, []);
   
   // ====== HTML ===========
-  const driveEnabled = isConnected || isSimulation;
-
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-10">
       <HeaderSection
@@ -344,6 +468,24 @@ function App() {
         pwmReadM1={pwmReadM1}
         pwmReadM2={pwmReadM2}
         onResetEncoder={handleResetEncoder}
+      />
+
+      <StepResponseSection
+        driveEnabled={driveEnabled}
+        isRunning={isStepRunning}
+        motorIndex={stepMotor}
+        stepValue={stepValue}
+        durationMs={stepDurationMs}
+        samples={stepSamples}
+        onMotorChange={setStepMotor}
+        onStepChange={setStepValue}
+        onDurationChange={setStepDurationMs}
+        onStart={startStepCapture}
+        onStop={stopStepCapture}
+        onClear={clearStepSamples}
+        onExport={exportStepSamples}
+        stepOffsetMs={stepOffsetMs}
+        onOffsetChange={setStepOffsetMs}
       />
     </main>
   );
