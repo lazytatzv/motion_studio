@@ -59,23 +59,32 @@ function App() {
 
   const driveEnabled = isConnected || isSimulation;
 
-  // Step response capture
-  const [stepMotor, setStepMotor] = useState<1 | 2>(1);
-  const [stepValue, setStepValue] = useState<number>(SPEED_MAX);
-  const [stepDurationMs, setStepDurationMs] = useState<number>(2000);
-  const [stepOffsetMs, setStepOffsetMs] = useState<number>(150);
-  const [stepSamples, setStepSamples] = useState<
+  // Step response capture (separate state for M1 and M2)
+  const [stepValueM1, setStepValueM1] = useState<number>(SPEED_MAX);
+  const [stepDurationMsM1, setStepDurationMsM1] = useState<number>(2000);
+  const [stepOffsetMsM1, setStepOffsetMsM1] = useState<number>(150);
+  const [stepSamplesM1, setStepSamplesM1] = useState<
     { t: number; velM1: number; velM2: number; cmd: number }[]
   >([]);
-  const [isStepRunning, setIsStepRunning] = useState<boolean>(false);
+  const [isStepRunningM1, setIsStepRunningM1] = useState<boolean>(false);
+
+  const [stepValueM2, setStepValueM2] = useState<number>(SPEED_MAX);
+  const [stepDurationMsM2, setStepDurationMsM2] = useState<number>(2000);
+  const [stepOffsetMsM2, setStepOffsetMsM2] = useState<number>(150);
+  const [stepSamplesM2, setStepSamplesM2] = useState<
+    { t: number; velM1: number; velM2: number; cmd: number }[]
+  >([]);
+  const [isStepRunningM2, setIsStepRunningM2] = useState<boolean>(false);
   // stepStartRef removed; timing is handled in Rust sim
   const stepIntervalRef = useRef<number | null>(null);
   const stepTimeoutRef = useRef<number | null>(null);
   const stepSamplingStartRef = useRef<number | null>(null);
   const stepCmdRef = useRef<number>(SPEED_STOP);
   // Simulation model params (ms and pps)
-  const [simTauMs, setSimTauMs] = useState<number>(250);
-  const [simGain, setSimGain] = useState<number>(120);
+  const [simTauMsM1, setSimTauMsM1] = useState<number>(250);
+  const [simGainM1, setSimGainM1] = useState<number>(120);
+  const [simTauMsM2, setSimTauMsM2] = useState<number>(250);
+  const [simGainM2, setSimGainM2] = useState<number>(120);
  
   
   // ===== Event Handler ==================================
@@ -202,7 +211,7 @@ function App() {
     } finally {
       setIsPortRefreshing(false);
     } 
-  }, [stepMotor, stepValue, stepDurationMs, isManualPort, portName]);
+  }, [isManualPort, portName]);
 
   const handleListPorts = async () => {
     await refreshPorts();
@@ -232,13 +241,29 @@ function App() {
     }
   }
 
-  const applySimParams = async () => {
+  const applySimParams = async (motorIndex: 1 | 2) => {
     try {
+      // pick values per motor
+      const tauMs = motorIndex === 1 ? simTauMsM1 : simTauMsM2;
+      const gain = motorIndex === 1 ? simGainM1 : simGainM2;
       // convert ms -> seconds for Rust
-      const tau_s = simTauMs / 1000.0;
-      await invoke("set_sim_params", { tau: tau_s, gain: simGain });
-      alert(`Applied sim params: tau=${simTauMs} ms, gain=${simGain} pps`);
+      const tau_s = tauMs / 1000.0;
+      const payload = {
+        motor_index: motorIndex,
+        motorIndex: motorIndex,
+        motor: motorIndex,
+        tau: tau_s,
+        tau_s: tau_s,
+        tauMs: tauMs,
+        gain: gain,
+        max_vel: gain,
+        maxVel: gain,
+      } as any;
+      try { console.debug("Invoking set_sim_params_js with:", payload); } catch {}
+      await invoke("set_sim_params_js", { params: payload });
+      alert(`Applied sim params (M${motorIndex}): tau=${tauMs} ms, gain=${gain} pps`);
     } catch (e) {
+      console.error("set_sim_params_js failed:", e);
       alert(`Failed to apply sim params: ${e}`);
     }
   }
@@ -278,46 +303,60 @@ function App() {
     velM2Ref.current = velM2;
   }, [velM2]);
 
-  const startStepCapture = useCallback(() => {
-    if (isStepRunning || !driveEnabled) return;
+  const startStepCapture = useCallback((motorIndex: 1 | 2) => {
+    const driveOk = driveEnabled;
+    if (!driveOk) return;
     (async () => {
-      setIsStepRunning(true);
-      setStepSamples([]);
+      // pick per-motor state setters and values
+      const setIsRunning = motorIndex === 1 ? setIsStepRunningM1 : setIsStepRunningM2;
+      const setSamples = motorIndex === 1 ? setStepSamplesM1 : setStepSamplesM2;
+      const stepValue = motorIndex === 1 ? stepValueM1 : stepValueM2;
+      const stepDurationMs = motorIndex === 1 ? stepDurationMsM1 : stepDurationMsM2;
+      const stepOffsetMs = motorIndex === 1 ? stepOffsetMsM1 : stepOffsetMsM2;
+
+      setIsRunning(true);
+      setSamples([]);
       stepCmdRef.current = SPEED_STOP;
 
       try {
         const sampleInterval = 50;
-        try { console.debug("Invoking run_step_response_async with applyDelayMs:", stepOffsetMs); } catch {}
+        try { console.debug("Invoking run_step_response_async with apply_delay_ms:", stepOffsetMs); } catch {}
         const raw = await invoke("run_step_response_async", {
-          motorIndex: stepMotor,
+          // include both snake_case and camelCase to be tolerant of invoke deserialization
+          motor_index: motorIndex,
+          motorIndex: motorIndex,
+          step_value: stepValue,
           stepValue: stepValue,
+          duration_ms: stepDurationMs,
           durationMs: stepDurationMs,
+          sample_interval_ms: sampleInterval,
           sampleIntervalMs: sampleInterval,
+          apply_delay_ms: stepOffsetMs,
           applyDelayMs: stepOffsetMs,
         }) as Array<[number, number, number]>;
 
-        // Debug: log raw tuples to help diagnose offset/timestamp behavior
         try { console.debug("run_step_response_async raw (first 20):", raw.slice(0, 20)); } catch {}
 
         const mapped = raw.map(([t, vel, cmd]) => ({
           t,
-          velM1: stepMotor === 1 ? vel : 0,
-          velM2: stepMotor === 2 ? vel : 0,
+          velM1: motorIndex === 1 ? vel : 0,
+          velM2: motorIndex === 2 ? vel : 0,
           cmd,
         }));
 
         try { console.debug("mapped step samples (first 20):", mapped.slice(0, 20)); } catch {}
-        setStepSamples(mapped);
+        setSamples(mapped);
       } catch (e) {
         console.error("Step capture failed:", e);
         alert(`Step capture failed: ${e}`);
       } finally {
-        setIsStepRunning(false);
+        const setIsRunningFinal = motorIndex === 1 ? setIsStepRunningM1 : setIsStepRunningM2;
+        setIsRunningFinal(false);
       }
     })();
-  }, [driveEnabled, stepMotor, stepValue, stepDurationMs, isStepRunning, stepOffsetMs]);
+  }, [driveEnabled, stepValueM1, stepValueM2, stepDurationMsM1, stepDurationMsM2, stepOffsetMsM1, stepOffsetMsM2]);
 
-  const stopStepCapture = useCallback(() => {
+  const stopStepCapture = useCallback((motorIndex: 1 | 2) => {
     if (stepIntervalRef.current !== null) {
       clearInterval(stepIntervalRef.current);
       stepIntervalRef.current = null;
@@ -331,28 +370,30 @@ function App() {
       stepSamplingStartRef.current = null;
     }
     stepCmdRef.current = SPEED_STOP;
-    void handlePresetSpeed(stepMotor, SPEED_STOP);
-    setIsStepRunning(false);
-  }, [handlePresetSpeed, stepMotor]);
+    void handlePresetSpeed(motorIndex, SPEED_STOP);
+    if (motorIndex === 1) setIsStepRunningM1(false); else setIsStepRunningM2(false);
+  }, [handlePresetSpeed]);
 
-  const clearStepSamples = useCallback(() => {
-    setStepSamples([]);
+  const clearStepSamples = useCallback((motorIndex?: 1 | 2) => {
+    if (!motorIndex) {
+      setStepSamplesM1([]);
+      setStepSamplesM2([]);
+    } else if (motorIndex === 1) setStepSamplesM1([]); else setStepSamplesM2([]);
   }, []);
 
-  const exportStepSamples = useCallback(() => {
+  const exportStepSamples = useCallback((motorIndex: 1 | 2) => {
+    const stepSamples = motorIndex === 1 ? stepSamplesM1 : stepSamplesM2;
     if (stepSamples.length === 0) return;
     const header = "t_ms,vel_m1,vel_m2,cmd";
     const rows = stepSamples.map((s) => `${s.t.toFixed(0)},${s.velM1},${s.velM2},${s.cmd}`);
     const csv = [header, ...rows].join("\n");
-    // Try standard anchor download first; if not available (Tauri webview restrictions),
-    // fall back to copying CSV to clipboard and alerting the user.
     try {
       console.debug("exportStepSamples: preparing CSV, rows:", rows.length);
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `step_response_${stepMotor}_${Date.now()}.csv`;
+      anchor.download = `step_response_M${motorIndex}_${Date.now()}.csv`;
       anchor.click();
       URL.revokeObjectURL(url);
       try { console.debug("exportStepSamples: download triggered"); } catch {}
@@ -366,7 +407,7 @@ function App() {
         try { console.error("exportStepSamples: failures", e, e2); } catch {}
       }
     }
-  }, [stepMotor, stepSamples]);
+  }, [stepSamplesM1, stepSamplesM2]);
 
   useEffect(() => {
 	const interval = setInterval(async () => {
@@ -472,11 +513,16 @@ function App() {
         onToggleSimulation={handleToggleSimulation}
         portSelectRef={portSelectRef}
         simulationPort={SIMULATED_PORT}
-        simTauMs={simTauMs}
-        onChangeSimTauMs={setSimTauMs}
-        onApplySimParams={applySimParams}
-        simGain={simGain}
-        onChangeSimGain={setSimGain}
+        simTauMsM1={simTauMsM1}
+        onChangeSimTauMsM1={setSimTauMsM1}
+        onApplySimParamsM1={applySimParams}
+        simGainM1={simGainM1}
+        onChangeSimGainM1={setSimGainM1}
+        simTauMsM2={simTauMsM2}
+        onChangeSimTauMsM2={setSimTauMsM2}
+        onApplySimParamsM2={applySimParams}
+        simGainM2={simGainM2}
+        onChangeSimGainM2={setSimGainM2}
       />
 
       <TelemetrySection
@@ -489,23 +535,49 @@ function App() {
         onResetEncoder={handleResetEncoder}
       />
 
-      <StepResponseSection
-        driveEnabled={driveEnabled}
-        isRunning={isStepRunning}
-        motorIndex={stepMotor}
-        stepValue={stepValue}
-        durationMs={stepDurationMs}
-        samples={stepSamples}
-        onMotorChange={setStepMotor}
-        onStepChange={setStepValue}
-        onDurationChange={setStepDurationMs}
-        onStart={startStepCapture}
-        onStop={stopStepCapture}
-        onClear={clearStepSamples}
-        onExport={exportStepSamples}
-        stepOffsetMs={stepOffsetMs}
-        onOffsetChange={setStepOffsetMs}
-      />
+      <section className="space-y-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-50">Step Response</h2>
+            <p className="text-sm text-slate-400">Capture a simple step response for each motor (separate panels below).</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <StepResponseSection
+            driveEnabled={driveEnabled}
+            isRunning={isStepRunningM1}
+            motorIndex={1}
+            stepValue={stepValueM1}
+            durationMs={stepDurationMsM1}
+            samples={stepSamplesM1}
+            onStepChange={setStepValueM1}
+            onDurationChange={setStepDurationMsM1}
+            onStart={() => startStepCapture(1)}
+            onStop={() => stopStepCapture(1)}
+            onClear={() => clearStepSamples(1)}
+            onExport={() => exportStepSamples(1)}
+            stepOffsetMs={stepOffsetMsM1}
+            onOffsetChange={setStepOffsetMsM1}
+          />
+          <StepResponseSection
+            driveEnabled={driveEnabled}
+            isRunning={isStepRunningM2}
+            motorIndex={2}
+            stepValue={stepValueM2}
+            durationMs={stepDurationMsM2}
+            samples={stepSamplesM2}
+            onStepChange={setStepValueM2}
+            onDurationChange={setStepDurationMsM2}
+            onStart={() => startStepCapture(2)}
+            onStop={() => stopStepCapture(2)}
+            onClear={() => clearStepSamples(2)}
+            onExport={() => exportStepSamples(2)}
+            stepOffsetMs={stepOffsetMsM2}
+            onOffsetChange={setStepOffsetMsM2}
+          />
+        </div>
+      </section>
     </main>
   );
 }

@@ -14,7 +14,6 @@ interface StepResponseSectionProps {
   stepValue: number;
   durationMs: number;
   samples: StepSample[];
-  onMotorChange: (value: 1 | 2) => void;
   onStepChange: (value: number) => void;
   onDurationChange: (value: number) => void;
   onStart: () => void;
@@ -90,7 +89,6 @@ export function StepResponseSection({
   stepValue,
   durationMs,
   samples,
-  onMotorChange,
   onStepChange,
   onDurationChange,
   onStart,
@@ -122,7 +120,7 @@ export function StepResponseSection({
     effectiveLeft = marginX + finalShift;
     effectiveInnerW = Math.max(1, width - effectiveLeft - marginX);
   }
-  const path = buildPath(samples, width, height, motorIndex, effectiveLeft, effectiveInnerW);
+  const measuredPath = buildPath(samples, width, height, motorIndex, effectiveLeft, effectiveInnerW);
   const cmdPath = buildCmdPath(samples, width, height, effectiveLeft, effectiveInnerW);
 
   const yMin = -130;
@@ -131,41 +129,11 @@ export function StepResponseSection({
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-50">Step Response</h2>
-          <p className="text-sm text-slate-400">Capture a simple step response for the selected motor.</p>
-        </div>
-      </div>
-
       <div className={styles.cardClass}>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
-            <label className={styles.labelClass}>Motor</label>
-            <div className={styles.selectWrapperClass}>
-              <select
-                className={styles.selectClass}
-                value={motorIndex}
-                onChange={(e) => onMotorChange(Number(e.target.value) as 1 | 2)}
-              >
-                <option value={1}>M1</option>
-                <option value={2}>M2</option>
-              </select>
-              <svg
-                className={styles.selectChevronClass}
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </div>
+            <div className="text-sm font-medium text-slate-200">Motor {motorIndex}</div>
+            <div className="text-xs text-slate-400">Capture a simple step response for this motor.</div>
           </div>
 
           <div className="space-y-2">
@@ -245,9 +213,9 @@ export function StepResponseSection({
                   );
                 })}
                 <path d={cmdPath} stroke="#a78bfa" strokeWidth="2" fill="none" opacity="0.7" strokeLinecap="round" />
-                <path d={path} stroke="#38bdf8" strokeWidth="2" fill="none" strokeLinecap="round" />
+                <path d={measuredPath} stroke={motorIndex === 1 ? "#38bdf8" : "#84cc16"} strokeWidth="2" fill="none" strokeLinecap="round" />
             </svg>
-            <div className="text-xs text-slate-500">Purple: command (0-127), Blue: measured velocity (pps)</div>
+              <div className="text-xs text-slate-500">Purple: command (0-127), Measured: motor {motorIndex} (pps)</div>
           </div>
         )}
       </div>

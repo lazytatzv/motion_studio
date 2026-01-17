@@ -19,12 +19,18 @@ interface ConfigurationSectionProps {
   portSelectRef: RefObject<HTMLSelectElement | null>;
   simulationPort: string;
 
-  // simulation params
-  simTauMs: number;
-  onChangeSimTauMs: (value: number) => void;
-  simGain: number;
-  onChangeSimGain: (value: number) => void;
-  onApplySimParams: () => void;
+  // simulation params per motor
+  simTauMsM1: number;
+  onChangeSimTauMsM1: (value: number) => void;
+  simGainM1: number;
+  onChangeSimGainM1: (value: number) => void;
+  onApplySimParamsM1: (motorIndex: 1 | 2) => void;
+
+  simTauMsM2: number;
+  onChangeSimTauMsM2: (value: number) => void;
+  simGainM2: number;
+  onChangeSimGainM2: (value: number) => void;
+  onApplySimParamsM2: (motorIndex: 1 | 2) => void;
 }
 
 export function ConfigurationSection({
@@ -44,11 +50,16 @@ export function ConfigurationSection({
   onToggleSimulation,
   portSelectRef,
   simulationPort,
-  simTauMs,
-  onChangeSimTauMs,
-  simGain,
-  onChangeSimGain,
-  onApplySimParams,
+  simTauMsM1,
+  onChangeSimTauMsM1,
+  simGainM1,
+  onChangeSimGainM1,
+  onApplySimParamsM1,
+  simTauMsM2,
+  onChangeSimTauMsM2,
+  simGainM2,
+  onChangeSimGainM2,
+  onApplySimParamsM2,
 }: ConfigurationSectionProps) {
   return (
     <section className="space-y-6">
@@ -179,29 +190,59 @@ export function ConfigurationSection({
                 {isSimulation ? "Disable Simulation" : "Enable Simulation"}
               </button>
             </div>
-            <div className="space-y-2 pt-3">
-              <label className={styles.labelClass}>Time Constant (ms)</label>
-              <input
-                className={styles.inputClass}
-                type="number"
-                min={10}
-                step={10}
-                value={simTauMs}
-                onChange={(e) => onChangeSimTauMs(Number(e.target.value))}
-              />
-              <label className={styles.labelClass}>Gain (pps)</label>
-              <input
-                className={styles.inputClass}
-                type="number"
-                min={1}
-                step={1}
-                value={simGain}
-                onChange={(e) => onChangeSimGain(Number(e.target.value))}
-              />
-              <div className="flex gap-2">
-                <button className={styles.btnSecondary} onClick={onApplySimParams} disabled={!isSimulation}>
-                  Apply Sim Params
-                </button>
+            <div className="space-y-2 pt-3 grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-slate-200">Motor 1</div>
+                <label className={styles.labelClass}>Time Constant (ms)</label>
+                <input
+                  className={styles.inputClass}
+                  type="number"
+                  min={10}
+                  step={10}
+                  value={simTauMsM1}
+                  onChange={(e) => onChangeSimTauMsM1(Number(e.target.value))}
+                />
+                <label className={styles.labelClass}>Gain (pps)</label>
+                <input
+                  className={styles.inputClass}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={simGainM1}
+                  onChange={(e) => onChangeSimGainM1(Number(e.target.value))}
+                />
+                <div className="flex gap-2">
+                  <button className={styles.btnSecondary} onClick={() => onApplySimParamsM1(1)} disabled={!isSimulation}>
+                    Apply M1
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-slate-200">Motor 2</div>
+                <label className={styles.labelClass}>Time Constant (ms)</label>
+                <input
+                  className={styles.inputClass}
+                  type="number"
+                  min={10}
+                  step={10}
+                  value={simTauMsM2}
+                  onChange={(e) => onChangeSimTauMsM2(Number(e.target.value))}
+                />
+                <label className={styles.labelClass}>Gain (pps)</label>
+                <input
+                  className={styles.inputClass}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={simGainM2}
+                  onChange={(e) => onChangeSimGainM2(Number(e.target.value))}
+                />
+                <div className="flex gap-2">
+                  <button className={styles.btnSecondary} onClick={() => onApplySimParamsM2(2)} disabled={!isSimulation}>
+                    Apply M2
+                  </button>
+                </div>
               </div>
             </div>
           </div>

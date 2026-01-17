@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serialport::SerialPort; // trait??
+use serde_json::Value as JsonValue;
 
 const SIMULATED_PORT: &str = "SIMULATED";
 
@@ -27,9 +28,11 @@ struct SimState {
     m1_vel: f32,
     m2_vel: f32,
     last_update: Option<Instant>,
-    // Simulation parameters
-    tau: f32,
-    gain: f32,
+    // Simulation parameters (per-motor)
+    tau_m1: f32,
+    gain_m1: f32,
+    tau_m2: f32,
+    gain_m2: f32,
 }
 
 static SIMULATION_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -43,8 +46,10 @@ static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m1_vel: 0.0,
     m2_vel: 0.0,
     last_update: None,
-    tau: 0.25_f32,
-    gain: 120.0_f32,
+    tau_m1: 0.25_f32,
+    gain_m1: 120.0_f32,
+    tau_m2: 0.25_f32,
+    gain_m2: 120.0_f32,
 }));
 
 fn sim_update(sim: &mut SimState) {
@@ -59,8 +64,10 @@ fn sim_update(sim: &mut SimState) {
         return;
     };
 
-    let tau = sim.tau;
-    let gain = sim.gain;
+    let tau_m1 = sim.tau_m1;
+    let gain_m1 = sim.gain_m1;
+    let tau_m2 = sim.tau_m2;
+    let gain_m2 = sim.gain_m2;
 
     let m1_u = if sim.m1_mode_pwm {
         (sim.m1_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
@@ -73,11 +80,11 @@ fn sim_update(sim: &mut SimState) {
         ((sim.m2_speed as f32 - 64.0) / 63.0).clamp(-1.0, 1.0)
     };
 
-    let m1_target = gain * m1_u;
-    let m2_target = gain * m2_u;
+    let m1_target = gain_m1 * m1_u;
+    let m2_target = gain_m2 * m2_u;
 
-    sim.m1_vel += (dt / tau) * (m1_target - sim.m1_vel);
-    sim.m2_vel += (dt / tau) * (m2_target - sim.m2_vel);
+    sim.m1_vel += (dt / tau_m1) * (m1_target - sim.m1_vel);
+    sim.m2_vel += (dt / tau_m2) * (m2_target - sim.m2_vel);
 
     sim.last_update = Some(now);
 }
@@ -571,12 +578,68 @@ async fn run_step_response_async(motor_index: u8, step_value: u8, duration_ms: u
 }
 
 #[tauri::command]
-fn set_sim_params(tau: f32, gain: f32) -> Result<(), String> {
+fn set_sim_params(motor_index: u8, tau: f32, gain: f32) -> Result<(), String> {
     let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
-    sim.tau = tau;
-    sim.gain = gain;
-    println!("[SIM] set_sim_params: tau={} s, gain={} pps per ±1", tau, gain);
+    if motor_index == 1 {
+        sim.tau_m1 = tau;
+        sim.gain_m1 = gain;
+        println!("[SIM] set_sim_params: motor=1 tau={} s, gain={} pps per ±1", tau, gain);
+    } else if motor_index == 2 {
+        sim.tau_m2 = tau;
+        sim.gain_m2 = gain;
+        println!("[SIM] set_sim_params: motor=2 tau={} s, gain={} pps per ±1", tau, gain);
+    } else {
+        return Err("Invalid motor index".into());
+    }
     Ok(())
+}
+
+// Tolerant JS-facing wrapper which accepts arbitrary JSON and extracts
+// `motor_index` / `motorIndex` (or `motor`), `tau`, and `gain` fields.
+#[tauri::command]
+fn set_sim_params_js(params: JsonValue) -> Result<(), String> {
+    println!("[SIM JS] set_sim_params_js called with params: {}", params);
+    // helper to extract integer-ish field from multiple possible names
+    let get_i64 = |names: &[&str]| -> Option<i64> {
+        for &n in names {
+            if let Some(v) = params.get(n) {
+                if v.is_i64() {
+                    return v.as_i64();
+                } else if v.is_u64() {
+                    return v.as_u64().map(|x| x as i64);
+                } else if v.is_f64() {
+                    return v.as_f64().map(|f| f as i64);
+                }
+            }
+        }
+        None
+    };
+
+    let get_f64 = |names: &[&str]| -> Option<f64> {
+        for &n in names {
+            if let Some(v) = params.get(n) {
+                if v.is_f64() {
+                    return v.as_f64();
+                } else if v.is_i64() {
+                    return v.as_i64().map(|x| x as f64);
+                } else if v.is_u64() {
+                    return v.as_u64().map(|x| x as f64);
+                }
+            }
+        }
+        None
+    };
+
+    let motor_i = get_i64(&["motor_index", "motorIndex", "motor"]).ok_or("Missing motor index: provide motor_index/motorIndex/motor")?;
+    if motor_i != 1 && motor_i != 2 {
+        return Err(format!("Invalid motor index: {} (expected 1 or 2)", motor_i));
+    }
+    let tau = get_f64(&["tau", "tau_s", "tauMs"]).ok_or("Missing tau: provide tau/tau_s/tauMs")? as f32;
+    let gain = get_f64(&["gain", "max_vel", "maxVel"]).ok_or("Missing gain: provide gain/max_vel/maxVel")? as f32;
+
+    println!("[SIM JS] parsed motor={}, tau={}, gain={}", motor_i, tau, gain);
+
+    set_sim_params(motor_i as u8, tau, gain)
 }
 
 #[tauri::command]
@@ -821,6 +884,7 @@ pub fn run() {
             list_serial_ports,
             set_simulation_mode,
             set_sim_params,
+            set_sim_params_js,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
