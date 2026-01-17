@@ -382,8 +382,8 @@ fn read_motor_currents() -> Result<(u32, u32), String> {
             .map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
         let m1_delta = (sim.m1_speed as i32 - 64).abs() as u32;
         let m2_delta = (sim.m2_speed as i32 - 64).abs() as u32;
-        let m1_current = 100 + m1_delta * 20;
-        let m2_current = 100 + m2_delta * 20;
+        let m1_current = m1_delta * 20;
+        let m2_current = m2_delta * 20;
         return Ok((m1_current, m2_current));
     }
 

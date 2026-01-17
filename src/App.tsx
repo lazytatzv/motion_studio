@@ -68,20 +68,20 @@ function App() {
 
   // Drive Clockwise with Max speed
   const handleMaxCwM1 = async () => {
-    await invoke("drive_symply_async", { speed: SPEED_MAX as number, motorIndex: 1 });
+    await invoke("drive_simply_async", { speed: SPEED_MAX as number, motorIndex: 1 });
   }
 
   const handleMaxCwM2 = async () => {
-    await invoke("drive_symply_async", { speed: SPEED_MAX as number, motorIndex: 2 });
+    await invoke("drive_simply_async", { speed: SPEED_MAX as number, motorIndex: 2 });
   }
 
   // Drive Counter Clockwise with Max speed
   const handleMaxCcwM1 = async () => {
-    await invoke("drive_symply_async", { speed: SPEED_MIN as number, motorIndex: 1 });
+    await invoke("drive_simply_async", { speed: SPEED_MIN as number, motorIndex: 1 });
   }
 
   const handleMaxCcwM2 = async () => {
-    await invoke("drive_symply_async", { speed: SPEED_MIN as number, motorIndex: 2 });
+    await invoke("drive_simply_async", { speed: SPEED_MIN as number, motorIndex: 2 });
   }
 
 
