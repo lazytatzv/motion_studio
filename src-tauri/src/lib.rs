@@ -173,6 +173,11 @@ async fn configure_baud(baud_rate: u32) -> Result<(), String> {
             .map_err(|e| format!("Failed to acquire lock: {}", e))?;
         
         if let Some(roboclaw) = roboclaw_opt.as_mut() {
+            if is_simulation_enabled() {
+                roboclaw.baud_rate = baud_rate;
+                println!("[SIM] Baud rate set to {}", baud_rate);
+                return Ok(());
+            }
             roboclaw.baud_rate = baud_rate;
             roboclaw.port = serialport::new(&roboclaw.port_name, baud_rate)
                 .timeout(Duration::from_millis(100))
