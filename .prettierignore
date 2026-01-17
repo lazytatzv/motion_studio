@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-ssr
+src-tauri/target
+packaging/apt/repo
+packaging/aur/pkg
+packaging/aur/src
+packaging/aur/roboclaw-studio-git
+*.deb
+*.pkg.tar.zst
+*.pkg.tar.zst.sig
