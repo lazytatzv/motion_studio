@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
@@ -8,6 +8,7 @@ const SPEED_MAX = 127;
 const PWM_MIN = -32767;
 const PWM_ZERO = 0;
 const PWM_MAX = 32767;
+const SIMULATED_PORT = "SIMULATED";
 
 function App() {
   //const [count, setCount] = useState<number>(0);
@@ -27,6 +28,9 @@ function App() {
   const [connectedPort, setConnectedPort] = useState<string>("");
   const [connectionError, setConnectionError] = useState<string>("");
   const [isSimulation, setIsSimulation] = useState<boolean>(false);
+  const [isManualPort, setIsManualPort] = useState<boolean>(false);
+  const [isPortRefreshing, setIsPortRefreshing] = useState<boolean>(false);
+  const portSelectRef = useRef<HTMLSelectElement | null>(null);
 
   // Current motor speed fetched by command
   const [velM1, setVelM1] = useState<number>(0);
@@ -119,17 +123,21 @@ function App() {
   }
 
   const handleConfigurePort = async () => {
-    if (portName == "") return;
+    const targetPort = portName || availablePorts[0] || "";
+    if (targetPort === "") return;
 
     try {
       await invoke("configure_port", { 
-        portName: portName,
+        portName: targetPort,
         baudRate: baud !== "" ? baud : null 
       });
       setIsConnected(true);
-      setConnectedPort(portName);
+      setConnectedPort(targetPort);
+      setPortName(targetPort);
+      setIsManualPort(false);
       setConnectionError("");
-      alert(`Successfully connected to ${portName}`);
+      setIsSimulation(targetPort === SIMULATED_PORT);
+      alert(`Successfully connected to ${targetPort}`);
     } catch (error) {
       setIsConnected(false);
       setConnectedPort("");
@@ -138,14 +146,35 @@ function App() {
     }
   }
 
-  const handleListPorts = async () => {
+  const refreshPorts = useCallback(async () => {
+    if (document.activeElement === portSelectRef.current) {
+      return;
+    }
+
+    setIsPortRefreshing(true);
     try {
       const ports = await invoke("list_serial_ports") as string[];
-      setAvailablePorts(ports);
+      setAvailablePorts((prev) => {
+        if (prev.length === ports.length && prev.every((value, index) => value === ports[index])) {
+          return prev;
+        }
+        return ports;
+      });
+      if (!isManualPort && portName === "") {
+        const realPorts = ports.filter((port) => port !== SIMULATED_PORT);
+        if (realPorts.length > 0) {
+          setPortName(realPorts[0]);
+        }
+      }
     } catch (error) {
       setConnectionError(String(error));
-      alert(`Failed to list ports: ${error}`);
+    } finally {
+      setIsPortRefreshing(false);
     }
+  }, [isManualPort, portName]);
+
+  const handleListPorts = async () => {
+    await refreshPorts();
   }
 
   const handleResetEncoder = async () => {
@@ -157,7 +186,21 @@ function App() {
     setIsSimulation(nextValue);
     setConnectionError("");
     await invoke("set_simulation_mode", { enabled: nextValue });
+    if (nextValue) {
+      setPortName(SIMULATED_PORT);
+      setConnectedPort(SIMULATED_PORT);
+      setIsConnected(true);
+    } else if (connectedPort === SIMULATED_PORT) {
+      setIsConnected(false);
+      setConnectedPort("");
+    }
   }
+
+  useEffect(() => {
+    refreshPorts();
+    const interval = setInterval(refreshPorts, 2000);
+    return () => clearInterval(interval);
+  }, [refreshPorts]);
 
   // ===== Infinite Loop to Fetch Data from Motor Driver etc. =======================
 
@@ -388,34 +431,58 @@ function App() {
           <div className="card">
             <div className="card-title">Serial Port</div>
             <div className="card-body">
-              <div className="control-row">
-                <input
-                  className="input"
-                  type="text"
-                  value={portName}
-                  onChange={(e) => setPortName(e.target.value)}
-                  placeholder="/dev/ttyACM0"
-                />
-                <button className="btn btn-secondary" onClick={handleConfigurePort}>Connect</button>
-              </div>
-              <div className="button-row">
-                <button className="btn btn-ghost" onClick={handleListPorts}>List Ports</button>
-              </div>
-              {availablePorts.length > 0 && (
-                <div className="select-row">
-                  <label className="label">Available Ports</label>
+              <div className="select-row">
+                <label className="label">Detected Ports</label>
+                <div className="control-row">
                   <select
+                    ref={portSelectRef}
                     className="select"
                     value={portName}
-                    onChange={(e) => setPortName(e.target.value)}
+                    onChange={(e) => {
+                      setPortName(e.target.value);
+                      setIsManualPort(false);
+                    }}
+                    disabled={availablePorts.length === 0}
                   >
-                    <option value="">Select port</option>
-                    {availablePorts.map((port) => (
-                      <option key={port} value={port}>{port}</option>
-                    ))}
+                    {availablePorts.length === 0 ? (
+                      <option value="">No ports detected</option>
+                    ) : (
+                      availablePorts.map((port) => (
+                        <option key={port} value={port}>{port}</option>
+                      ))
+                    )}
                   </select>
+                  <button className="btn btn-ghost" onClick={handleListPorts} disabled={isPortRefreshing}>
+                    {isPortRefreshing ? "Refreshing..." : "Refresh"}
+                  </button>
                 </div>
-              )}
+                <div className="helper-text">Auto refresh every 2 seconds.</div>
+              </div>
+
+              <div className="select-row">
+                <label className="label">Custom Path</label>
+                <div className="control-row">
+                  <input
+                    className="input"
+                    type="text"
+                    value={portName}
+                    onChange={(e) => {
+                      setPortName(e.target.value);
+                      setIsManualPort(true);
+                    }}
+                    placeholder="/dev/ttyACM0"
+                  />
+                  <button className="btn btn-secondary" onClick={handleConfigurePort}>
+                    Connect
+                  </button>
+                </div>
+              </div>
+
+              <div className="helper-text">
+                {availablePorts.length > 0
+                  ? `${availablePorts.length} port(s) detected. ${availablePorts.includes(SIMULATED_PORT) ? "Simulation port available." : ""}`
+                  : "Plug in your device and it will appear here."}
+              </div>
               {connectionError && (
                 <div className="status-banner error">{connectionError}</div>
               )}

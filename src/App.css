@@ -236,6 +236,11 @@ body {
   gap: 0.5rem;
 }
 
+.helper-text {
+  color: #7c8798;
+  font-size: 0.8rem;
+}
+
 .btn {
   border-radius: 12px;
   border: 1px solid transparent;

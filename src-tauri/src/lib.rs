@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use serialport::SerialPort; // trait??
 
+const SIMULATED_PORT: &str = "SIMULATED";
 
 // Struct holding RoboClaw settings
 pub struct Roboclaw {
@@ -196,6 +197,14 @@ async fn configure_port(port_name: String, baud_rate: Option<u32>) -> Result<(),
             .map_err(|e| format!("Failed to acquire lock: {}", e))?;
         
         if let Some(roboclaw) = roboclaw_opt.as_mut() {
+            if port_name == SIMULATED_PORT {
+                SIMULATION_ENABLED.store(true, Ordering::Relaxed);
+                roboclaw.port = None;
+                roboclaw.port_name = port_name.clone();
+                return Ok(());
+            }
+
+            SIMULATION_ENABLED.store(false, Ordering::Relaxed);
             let baud = baud_rate.unwrap_or(roboclaw.baud_rate);
             
             // Close existing port first
@@ -227,9 +236,11 @@ async fn configure_port(port_name: String, baud_rate: Option<u32>) -> Result<(),
 fn list_serial_ports() -> Result<Vec<String>, String> {
     serialport::available_ports()
         .map(|ports| {
-            ports.iter()
+            let mut list: Vec<String> = ports.iter()
                 .filter(|p| p.port_name.contains("ACM"))
-                .map(|p| p.port_name.clone()).collect()
+                .map(|p| p.port_name.clone()).collect();
+            list.push(SIMULATED_PORT.to_string());
+            list
         })
         .map_err(|e| format!("Failed to list ports: {}", e))
 }
