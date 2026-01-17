@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "motion_studio",
+  "productName": "roboclaw-studio",
   "version": "0.1.0",
   "identifier": "com.rodep.motion-studio",
   "build": {
@@ -23,6 +23,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb"]
+    "targets": ["deb"],
+    "icon": [
+      "icons/icon.png"
+    ]
   }
 }

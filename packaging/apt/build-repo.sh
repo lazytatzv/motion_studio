@@ -22,6 +22,11 @@ apt-ftparchive release "dists/$DIST" > "dists/$DIST/Release"
 if command -v gpg >/dev/null 2>&1; then
   gpg --yes --output "dists/$DIST/Release.gpg" -ba "dists/$DIST/Release"
   gpg --yes --output "dists/$DIST/InRelease" -abs "dists/$DIST/Release"
+
+  # Export public key for clients (optional)
+  if [ -n "$GPG_KEY_ID" ]; then
+    gpg --yes --output "roboclaw-studio.gpg" --export "$GPG_KEY_ID"
+  fi
 else
   echo "gpg not found; skipping signature"
 fi

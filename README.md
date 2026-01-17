@@ -9,6 +9,34 @@ This is an **unofficial** community-built app with a workflow inspired by the Wi
 - React + TypeScript (Vite)
 - Rust backend (serial I/O)
 
+## Install
+
+### Arch Linux (AUR)
+
+Package name: `roboclaw-studio-git` (VCS).
+
+Example (with an AUR helper):
+
+```bash
+yay -S roboclaw-studio-git
+```
+
+### Ubuntu / Debian
+
+Download the latest `.deb` from GitHub Releases and install:
+
+```bash
+sudo apt install ./motion_studio_*.deb
+```
+
+APT repo setup is also supported; see [packaging/apt/README.md](packaging/apt/README.md).
+
+If you enable the APT repo, you can install with:
+
+```bash
+sudo apt install roboclaw-studio
+```
+
 ## Development
 
 ### Prerequisites

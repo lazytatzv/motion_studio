@@ -12,6 +12,7 @@ This is a minimal, self-hosted APT repo setup for Ubuntu users.
 ## Prerequisites
 
 - `dpkg-dev` (for `dpkg-scanpackages`)
+- `apt-utils` (for `apt-ftparchive`)
 - `gnupg`
 
 ## Directory layout (generated)
@@ -37,6 +38,31 @@ packaging/apt/repo/
 
 ## Client install (example)
 
-Add your GPG public key and repo URL to `/etc/apt/sources.list.d/roboclaw-studio.list`, then run `sudo apt update` and `sudo apt install roboclaw-studio`.
+Assuming GitHub Pages at:
 
-Update the package name to match your final binary name if you change it.
+```
+https://lazytatzv.github.io/roboclaw-studio
+```
+
+1) Install the repo key:
+
+```bash
+curl -fsSL https://lazytatzv.github.io/roboclaw-studio/roboclaw-studio.gpg | \
+  sudo gpg --dearmor -o /usr/share/keyrings/roboclaw-studio.gpg
+```
+
+2) Add the repo source:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/roboclaw-studio.gpg] https://lazytatzv.github.io/roboclaw-studio stable main" | \
+  sudo tee /etc/apt/sources.list.d/roboclaw-studio.list
+```
+
+3) Install:
+
+```bash
+sudo apt update
+sudo apt install roboclaw-studio
+```
+
+If your repo name differs, update the URL accordingly.
