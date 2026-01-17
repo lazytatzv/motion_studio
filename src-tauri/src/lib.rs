@@ -27,6 +27,9 @@ struct SimState {
     m1_vel: f32,
     m2_vel: f32,
     last_update: Option<Instant>,
+    // Simulation parameters
+    tau: f32,
+    max_vel: f32,
 }
 
 static SIMULATION_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -40,6 +43,8 @@ static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m1_vel: 0.0,
     m2_vel: 0.0,
     last_update: None,
+    tau: 0.25_f32,
+    max_vel: 120.0_f32,
 }));
 
 fn sim_update(sim: &mut SimState) {
@@ -54,8 +59,8 @@ fn sim_update(sim: &mut SimState) {
         return;
     };
 
-    let tau = 0.25_f32;
-    let max_vel = 120.0_f32;
+    let tau = sim.tau;
+    let max_vel = sim.max_vel;
 
     let m1_u = if sim.m1_mode_pwm {
         (sim.m1_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
@@ -566,6 +571,15 @@ async fn run_step_response_async(motor_index: u8, step_value: u8, duration_ms: u
 }
 
 #[tauri::command]
+fn set_sim_params(tau: f32, max_vel: f32) -> Result<(), String> {
+    let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+    sim.tau = tau;
+    sim.max_vel = max_vel;
+    println!("[SIM] set_sim_params: tau={} s, max_vel={} pps", tau, max_vel);
+    Ok(())
+}
+
+#[tauri::command]
 async fn read_speed_async(motor_index: u8) -> Result<i32, String> {
     tauri::async_runtime::spawn_blocking(move || read_speed(motor_index))
         .await
@@ -806,6 +820,7 @@ pub fn run() {
             configure_port,
             list_serial_ports,
             set_simulation_mode,
+            set_sim_params,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

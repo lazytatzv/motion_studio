@@ -73,6 +73,9 @@ function App() {
   const stepTimeoutRef = useRef<number | null>(null);
   const stepSamplingStartRef = useRef<number | null>(null);
   const stepCmdRef = useRef<number>(SPEED_STOP);
+  // Simulation model params (ms and pps)
+  const [simTauMs, setSimTauMs] = useState<number>(250);
+  const [simMaxVel, setSimMaxVel] = useState<number>(120);
  
   
   // ===== Event Handler ==================================
@@ -226,6 +229,17 @@ function App() {
     } else if (connectedPort === SIMULATED_PORT) {
       setIsConnected(false);
       setConnectedPort("");
+    }
+  }
+
+  const applySimParams = async () => {
+    try {
+      // convert ms -> seconds for Rust
+      const tau_s = simTauMs / 1000.0;
+      await invoke("set_sim_params", { tau: tau_s, max_vel: simMaxVel });
+      alert(`Applied sim params: tau=${simTauMs} ms, max_vel=${simMaxVel} pps`);
+    } catch (e) {
+      alert(`Failed to apply sim params: ${e}`);
     }
   }
 
@@ -458,6 +472,11 @@ function App() {
         onToggleSimulation={handleToggleSimulation}
         portSelectRef={portSelectRef}
         simulationPort={SIMULATED_PORT}
+        simTauMs={simTauMs}
+        simMaxVel={simMaxVel}
+        onChangeSimTauMs={setSimTauMs}
+        onChangeSimMaxVel={setSimMaxVel}
+        onApplySimParams={applySimParams}
       />
 
       <TelemetrySection
