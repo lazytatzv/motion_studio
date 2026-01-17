@@ -1,7 +1,7 @@
 # RoboClaw Studio (Unofficial)
 
-Linux GUI for **Basicmicro RoboClaw Motion Studio**.
-This is an unofficial, community-built app targeting Linux with a similar workflow to the Windows-only tool.
+Linux GUI for **Basicmicro RoboClaw motor drivers**.
+This is an **unofficial** community-built app with a workflow inspired by the Windows-only Motion Studio.
 
 ## Tech
 
@@ -29,6 +29,10 @@ pnpm tauri dev
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Language note
+
+I'm not a native English speaker. Simple English is appreciated, and Japanese is also OK.
+
 ### Build release
 
 ```bash
@@ -48,6 +52,10 @@ ROBOCLAW_PORT=/dev/ttyACM1 pnpm tauri dev
 ## AUR Packaging
 
 The AUR recipe lives in [packaging/aur](packaging/aur). The current package name is `roboclaw-studio-git`.
+
+## Author
+
+Tatsuki Yano
 
 ## License
 

@@ -39,6 +39,10 @@ pnpm tauri build
 - Prefer English for comments and docs.
 - Run `pnpm build` before opening a PR.
 
+## Language note
+
+I'm not a native English speaker. Simple English is appreciated, and Japanese is also OK.
+
 ## Commit messages
 
 Use clear, imperative messages (e.g., "Fix serial port selection").

@@ -13,6 +13,14 @@ dist-ssr
 *.local
 *.pdf
 
+# AUR build artifacts
+packaging/aur/pkg/
+packaging/aur/src/
+packaging/aur/roboclaw-studio-git/
+packaging/aur/*.pkg.tar.zst
+packaging/aur/*.pkg.tar.zst.sig
+packaging/aur/*.log
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
