@@ -592,4 +592,64 @@ pub fn set_velocity_pid_sync(motor_index: u8, params: VelocityPidParams) -> Resu
     }
 }
 
+/// Measure QPPS (Quadrature Pulses Per Second) by running the motor at full forward (speed=127)
+/// for the specified duration and sampling the encoder-reported speed.
+/// Returns the measured QPPS (integer) or an error.
+pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<i32, String> {
+    if duration_ms < 200 { return Err("duration_ms must be >= 200".into()); }
+    // In simulation, drive_simply_sync and read_speed_sync already operate on sim state.
+    if is_simulation_enabled() {
+        // Save previous speed and set to max
+        let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+        let prev = if motor_index == 1 { sim.m1_speed } else { sim.m2_speed };
+        if motor_index == 1 { sim.m1_speed = 127; } else { sim.m2_speed = 127; }
+        // Run a few sim updates while waiting
+        let step = 10u64; // ms
+        let mut total = 0u32;
+        while total < duration_ms {
+            sim_update(&mut sim);
+            std::thread::sleep(std::time::Duration::from_millis(step));
+            total += step as u32;
+        }
+        // read speed (using same conversion as device read_speed_sync)
+        let measured = if motor_index == 1 { sim.m1_vel } else { sim.m2_vel };
+        // convert measured pps to integer (round)
+        let qpps = measured.round() as i32;
+        // restore previous
+        if motor_index == 1 { sim.m1_speed = prev; } else { sim.m2_speed = prev; }
+        return Ok(qpps);
+    }
+
+    // Real device: set speed to max, sample read_speed_sync periodically
+    // Save previous speed by commanding stop at the end; we don't try to read previous.
+    let sample_interval = 100u32; // ms
+    let mut samples: Vec<i32> = Vec::new();
+
+    // Apply full speed
+    drive_simply_sync(127, motor_index)?;
+    // wait initial settle
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let mut elapsed = 0u32;
+    while elapsed < duration_ms {
+        match read_speed_sync(motor_index) {
+            Ok(s) => samples.push(s),
+            Err(e) => eprintln!("measure_qpps: read_speed failed: {}", e),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(sample_interval as u64));
+        elapsed += sample_interval;
+    }
+
+    // Stop motor
+    drive_simply_sync(64, motor_index)?; // stop
+
+    if samples.is_empty() { return Err("No speed samples collected".into()); }
+
+    // Use median of samples (robust to transients)
+    samples.sort();
+    let mid = samples.len() / 2;
+    let qpps = samples[mid];
+    Ok(qpps)
+}
+
 // Async wrappers moved to crate root (`lib.rs`) as tauri command handlers.

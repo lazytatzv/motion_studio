@@ -110,6 +110,23 @@ export function VelocityPidSection({ motorIndex }: VelocityPidSectionProps) {
         <button onClick={setVelocityPidValues} disabled={loading} className={styles.btnSecondary}>
           Set PID
         </button>
+        <button
+          onClick={async () => {
+            setLoading(true);
+            setError("");
+            try {
+              const measured = await invoke("measure_qpps_async", { motorIndex, durationMs: 2000 }) as number;
+              setVelocityPid({ ...velocityPid, qpps: measured });
+            } catch (e) {
+              setError(String(e));
+            }
+            setLoading(false);
+          }}
+          disabled={loading}
+          className={styles.btnGhost}
+        >
+          Measure QPPS
+        </button>
       </div>
         </>
       )}

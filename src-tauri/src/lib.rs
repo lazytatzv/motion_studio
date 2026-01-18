@@ -390,6 +390,12 @@ async fn set_velocity_pid_async(motor_index: u8, p: i32, i: i32, d: i32, qpps: i
     device::set_velocity_pid_sync(motor_index, params)
 }
 
+#[tauri::command]
+async fn measure_qpps_async(motor_index: u8, duration_ms: Option<u32>) -> Result<i32, String> {
+    let dur = duration_ms.unwrap_or(2000);
+    tauri::async_runtime::spawn_blocking(move || device::measure_qpps_sync(motor_index, dur)).await.map_err(|e| format!("Join error: {}", e))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -416,6 +422,7 @@ pub fn run() {
             set_position_pid_async,
             read_velocity_pid_async,
             set_velocity_pid_async,
+            measure_qpps_async,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
