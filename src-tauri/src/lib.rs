@@ -1,511 +1,367 @@
-use once_cell::sync::Lazy;
-use std::io::{Read, Write};
-use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use serialport::SerialPort; // trait??
+mod sim;
+mod estimators;
+mod device;
 
+use serde_json::Value as JsonValue;
 
-// Struct holding RoboClaw settings
-pub struct Roboclaw {
-    addr: u8,
-    baud_rate: u32,
-    port_name: String,
-    port: Option<Box<dyn SerialPort>>, // Must be initialized only once
-}
+use crate::sim::{is_simulation_enabled, SIM_STATE, sim_update};
+use crate::estimators::{FrfPoint, StepSample};
 
-// Initialize defaults
-static ROBOCLAW: Lazy<Mutex<Option<Roboclaw>>> = Lazy::new(|| {
-    let baud_rate = 115_200;
-    // Try to auto-detect serial port, fallback to None
-    let port_name = std::env::var("ROBOCLAW_PORT")
-        .unwrap_or_else(|_| String::from("/dev/ttyACM0"));
+const SIMULATED_PORT: &str = "SIMULATED";
 
-    let port: Option<Box<dyn SerialPort>> = match serialport::new(&port_name, baud_rate)
-        .timeout(Duration::from_millis(100))
-        .open()
-    {
-        Ok(p) => {
-            println!("Successfully opened port {}", port_name);
-            Some(p)
-        }
-        Err(e) => {
-            eprintln!("Failed to open serial port {}: {}", port_name, e);
-            eprintln!("You can configure the port using configure_port command");
-            None
-        }
-    };
-
-    let roboclaw = Roboclaw {
-        addr: 0x80,
-        baud_rate,
-        port_name,
-        port,
-    };
-
-    Mutex::new(Some(roboclaw))
-});
-
-// Usage example for sending data
-fn send_serial_locked(roboclaw: &mut Roboclaw, data: &[u8]) -> Result<(), String> {
-    if let Some(port) = &mut roboclaw.port {
-        port.write_all(data).map_err(|e| e.to_string())
-    } else {
-        Err("Serial port not opened".into())
-    }
-}
-
-/*
-fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
-    if let Some(port) = &mut roboclaw.port {
-        let mut buf = [0u8; 1024];
-        match port.read(&mut buf) {
-            Ok(n) => Ok(buf[..n].to_vec()),
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(Vec::new()),
-            Err(e) => Err(format!("Failed to read: {}", e)),
-        }
-    } else {
-        Ok(Vec::new()) // or Err if you prefer
-    }
-}
-*/
-
-fn read_serial_locked(roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
-    if let Some(port) = &mut roboclaw.port {
-        let mut buf = [0u8; 1024];
-
-        // Read until timeout or actual data
-        match port.read(&mut buf) {
-            Ok(n) if n > 0 => {
-                // Trim strictly to received length
-                Ok(buf[..n].to_vec())
-            }
-            Ok(_) => {
-                // Timeout and no data
-                Err("No data received (timeout)".to_string())
-            }
-            Err(e) => Err(format!("Serial read error: {}", e)),
-        }
-    } else {
-        Err("Serial port not opened".into())
-    }
-}
-
-
-// Helper function
-// Use only when the response includes data and CRC
-fn parse_response(resp: &[u8], addr: u8, cmd: u8) -> Result<&[u8], String> {
-    if resp.len() < 3 {
-        return Err("Response too short".into());
-    }
-
-    let data_len = resp.len() - 2;
-    let data = &resp[..data_len];
-
-    // RoboClaw sends CRC as MSB, LSB (big-endian)
-    let crc_received = ((resp[data_len] as u16) << 8) | (resp[data_len + 1] as u16);
-
-    // Per RoboClaw manual: CRC is calculated on [Address, Command, Data bytes]
-    let mut full_packet = vec![addr, cmd];
-    full_packet.extend_from_slice(data);
-    let crc_calc = calc_crc(&full_packet);
-
-    if crc_calc != crc_received {
-        // println!("[DEBUG] crc calculated: {:?}", crc_calc);
-        //println!("[DEBUG] crc received: {:?}", crc_received);
-        return Err(format!("CRC mismatch!"));
-    }
-    Ok(data)
-}
-
-// Use this
-// Pass only the data to send
-/*
- * Usage
- * let response = send_and_read(data)?;
- * if !response.is_empty() {
- *  match parse_response(&response) {
- *      Ok(data) => println!("Valid"),
- *      Err(e) => println!("Error"),
- *  }
- * }
- */
-fn send_and_read(data: &[u8], roboclaw: &mut Roboclaw) -> Result<Vec<u8>, String> {
-    //let mut roboclaw = ROBOCLAW.lock().unwrap(); // Lock only once
-
-    send_serial_locked(roboclaw, data)?;
-    read_serial_locked(roboclaw)
-}
-
-// Configure baud_rate
+// Device implementations live in `device.rs`; command wrappers are defined in this file.
+// Run a step response entirely in the Rust sim and return sampled data
 #[tauri::command]
-async fn configure_baud(baud_rate: u32) -> Result<(), String> {
+async fn run_step_response_async(motor_index: u8, step_value: u8, duration_ms: u32, sample_interval_ms: u32, apply_delay_ms: u32) -> Result<Vec<(i64, i32, i32)>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut roboclaw_opt = ROBOCLAW.lock()
-            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-        
-        if let Some(roboclaw) = roboclaw_opt.as_mut() {
-            roboclaw.baud_rate = baud_rate;
-            roboclaw.port = serialport::new(&roboclaw.port_name, baud_rate)
-                .timeout(Duration::from_millis(100))
-                .open()
-                .map(Some)
-                .map_err(|e| format!("Failed to reopen port: {}", e))?;
-            println!("Baud rate set to {}", baud_rate);
-            Ok(())
-        } else {
-            Err("Serial port not initialized".into())
+        let mut results: Vec<(i64, i32, i32)> = Vec::new();
+
+        if !is_simulation_enabled() {
+            return Err("Simulation mode not enabled".to_string());
         }
+
+        let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+
+        // Initialize sim state
+        sim.m1_speed = 64;
+        sim.m2_speed = 64;
+        sim.m1_pwm = 0;
+        sim.m2_pwm = 0;
+        sim.m1_mode_pwm = false;
+        sim.m2_mode_pwm = false;
+        sim.m1_vel = 0.0;
+        sim.m2_vel = 0.0;
+        sim.last_update = Some(Instant::now());
+
+        // settle before sampling
+        let settle = Duration::from_millis(200);
+        std::thread::sleep(settle);
+
+        // sampling loop: start sampling, then apply step after requested apply_delay
+        let apply_delay = Duration::from_millis(apply_delay_ms as u64);
+        let start = Instant::now();
+
+        let sample_interval = Duration::from_millis(sample_interval_ms as u64);
+        let total_duration = Duration::from_millis(duration_ms as u64);
+
+        let step_apply_time = start + apply_delay;
+        let end_time = step_apply_time + total_duration;
+
+        let mut now = Instant::now();
+        while now <= end_time {
+            // apply step if reached
+            if now >= step_apply_time {
+                if motor_index == 1 {
+                    sim.m1_speed = step_value;
+                    sim.m1_mode_pwm = false;
+                } else {
+                    sim.m2_speed = step_value;
+                    sim.m2_mode_pwm = false;
+                }
+            }
+
+            sim_update(&mut sim);
+
+            // record time relative to sampling start (non-negative). Frontend will
+            // use the command change time (applyDelay) to position the step.
+            let t_rel = now.duration_since(start).as_millis() as i64;
+            let vel = if motor_index == 1 { sim.m1_vel } else { sim.m2_vel };
+            let cmd_now = if now >= step_apply_time && now < step_apply_time + total_duration { step_value as i32 } else { 64 as i32 };
+            results.push((t_rel, vel.round() as i32, cmd_now));
+
+            std::thread::sleep(sample_interval);
+            now = Instant::now();
+        }
+
+        // after end, issue stop
+        if motor_index == 1 {
+            sim.m1_speed = 64;
+        } else {
+            sim.m2_speed = 64;
+        }
+        sim_update(&mut sim);
+
+        Ok(results)
     })
     .await
-    .map_err(|e| format!("Thread join error: {}", e))?
+    .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
-// Configure port
+// Run a step response on a real device: send stop, wait, apply step, sample via read_speed
 #[tauri::command]
-async fn configure_port(port_name: String, baud_rate: Option<u32>) -> Result<(), String> {
+async fn run_step_response_device_async(motor_index: u8, step_value: u8, duration_ms: u32, sample_interval_ms: u32, apply_delay_ms: u32) -> Result<Vec<(i64, i32, i32)>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut roboclaw_opt = ROBOCLAW.lock()
-            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-        
-        if let Some(roboclaw) = roboclaw_opt.as_mut() {
-            let baud = baud_rate.unwrap_or(roboclaw.baud_rate);
-            
-            // Close existing port first
-            roboclaw.port = None;
-            
-            // Update configuration
-            roboclaw.port_name = port_name.clone();
-            roboclaw.baud_rate = baud;
-            
-            // Open new port
-            roboclaw.port = serialport::new(&port_name, baud)
-                .timeout(Duration::from_millis(100))
-                .open()
-                .map(Some)
-                .map_err(|e| format!("Failed to open port {}: {}", port_name, e))?;
-            
-            println!("Successfully opened port {} at {} baud", port_name, baud);
-            Ok(())
-        } else {
-            Err("RoboClaw not initialized".into())
+        let mut results: Vec<(i64, i32, i32)> = Vec::new();
+
+        // If simulation is enabled, we shouldn't run on device
+        if is_simulation_enabled() {
+            return Err("Simulation mode is enabled; disable to run on device".to_string());
         }
+
+            // initial stop
+            device::drive_simply_sync(64, motor_index)?;
+
+        // settle before sampling
+        let settle = Duration::from_millis(200);
+        std::thread::sleep(settle);
+
+        let apply_delay = Duration::from_millis(apply_delay_ms as u64);
+        let start = Instant::now();
+
+        let sample_interval = Duration::from_millis(sample_interval_ms as u64);
+        let total_duration = Duration::from_millis(duration_ms as u64);
+
+        let step_apply_time = start + apply_delay;
+        let end_time = step_apply_time + total_duration;
+
+        let mut now = Instant::now();
+        let mut applied = false;
+        while now <= end_time {
+            if !applied && now >= step_apply_time {
+                // apply step
+                    device::drive_simply_sync(step_value, motor_index)?;
+                applied = true;
+            }
+
+            // read speed from device (this will lock ROBOCLAW and talk serial)
+                let vel = match device::read_speed_sync(motor_index) {
+                Ok(v) => v,
+                Err(e) => {
+                    // on read error, push a NaN-like marker (-9999) and continue
+                    eprintln!("[STEP DEVICE] read_speed error: {}", e);
+                    -9999
+                }
+            };
+
+            let t_rel = now.duration_since(start).as_millis() as i64;
+            let cmd_now = if applied { step_value as i32 } else { 64 as i32 };
+            results.push((t_rel, vel, cmd_now));
+
+            std::thread::sleep(sample_interval);
+            now = Instant::now();
+        }
+
+        // after end, issue stop
+            device::drive_simply_sync(64, motor_index)?;
+
+        Ok(results)
     })
     .await
-    .map_err(|e| format!("Thread join error: {}", e))?
+    .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
-// List available serial ports
+ 
+
+// Frequency response: perform per-frequency sine tests (steady-state fit)
 #[tauri::command]
-fn list_serial_ports() -> Result<Vec<String>, String> {
-    serialport::available_ports()
-        .map(|ports| {
-            ports.iter()
-                .filter(|p| p.port_name.contains("ACM"))
-                .map(|p| p.port_name.clone()).collect()
-        })
-        .map_err(|e| format!("Failed to list ports: {}", e))
-}
+async fn run_frequency_response_async(
+    motor_index: u8,
+    start_hz: f64,
+    end_hz: f64,
+    points: u32,
+    amplitude_cmd: f32,
+    cycles: u32,
+    sample_interval_ms: u32,
+) -> Result<Vec<FrfPoint>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if points == 0 {
+            return Err("points must be > 0".to_string());
+        }
 
-// Drive motor with a simple speed command (no encoder)
-fn drive_simply(speed: u8, motor_index: u8) -> Result<(), String> {
-    let mut guard = ROBOCLAW.lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-    let mut roboclaw = guard.as_mut().ok_or("Roboclaw not initialized")?;
+        let mut results: Vec<FrfPoint> = Vec::new();
 
-    // 0 full reverse
-    // 64 stop
-    // 127 full forward
-    let speed = speed.min(127);
-    //let mut data = vec![ROBOCLAW_ADDR, 0x00, speed];
+        // create frequency vector (linear)
+        let pts = points as usize;
+        for i in 0..pts {
+            let frac = if pts == 1 { 0.0 } else { i as f64 / (pts - 1) as f64 };
+            let freq = start_hz + frac * (end_hz - start_hz);
+            if freq <= 0.0 {
+                results.push(FrfPoint { freq_hz: freq, gain: 0.0, phase_deg: 0.0 });
+                continue;
+            }
 
-    // Data buffer
-    let mut data: Vec<u8> = Vec::new();
+            let sample_interval = Duration::from_millis(sample_interval_ms as u64);
+            let fs = 1000.0 / (sample_interval_ms as f64);
 
-    data.push(roboclaw.addr);
+            // how many samples to collect for given cycles
+            let samples_per_cycle = (fs / freq).round() as usize;
+            let n_samples = (samples_per_cycle * (cycles as usize)).max(3);
 
-    // Drive M1 -> 6
-    // Drive M2 -> 7
-    if motor_index == 1 {
-        data.push(0x06);
-    } else if motor_index == 2 {
-        data.push(0x07);
-    }
+            // settle
+            std::thread::sleep(Duration::from_millis(200));
 
-    data.push(speed);
+            // Collect samples
+            let mut s_sum = 0.0_f64;
+            let mut c_sum = 0.0_f64;
+            let mut count = 0_usize;
 
-    let crc = calc_crc(&data);
-    data.push((crc >> 8) as u8); // MSB
-    data.push((crc & 0xFF) as u8); // LSB
-    
+            let omega = 2.0 * std::f64::consts::PI * freq;
+            let t0 = Instant::now();
 
-    // println!("[DEBUG] {:?}", data);
+            for _ in 0..n_samples {
+                let now = Instant::now();
+                let t = now.duration_since(t0).as_secs_f64();
+                let sinref = (omega * t).sin();
+                let cosref = (omega * t).cos();
 
-    let response = send_and_read(&data, &mut roboclaw)?;
+                // compute command (centered at 64)
+                let cmdf = 64.0 + (amplitude_cmd as f64) * sinref;
+                let cmdu = cmdf.round().clamp(0.0, 127.0) as u8;
 
-    //println!("[DEBUG] {:?}", response);
+                if is_simulation_enabled() {
+                    let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+                    if motor_index == 1 {
+                        sim.m1_speed = cmdu;
+                        sim.m1_mode_pwm = false;
+                    } else {
+                        sim.m2_speed = cmdu;
+                        sim.m2_mode_pwm = false;
+                    }
+                    sim_update(&mut sim);
+                } else {
+                    // send to device
+                        device::drive_simply_sync(cmdu, motor_index)?;
+                }
 
-    // Safe response check
-    // DriveM1/M2 doesn't return a data payload,
-    // so a simple check is enough; success returns 0xFF.
-    if response.get(0) == Some(&0xFF) {
-        Ok(())
-    } else {
-        Err("Failed to drive motor".to_string())
-    }
-}
+                // read velocity
+                let vel = match device::read_speed_sync(motor_index) {
+                    Ok(v) => v as f64,
+                    Err(_) => {
+                        // treat as zero on error
+                        0.0
+                    }
+                };
 
-// Blocking would freeze the UI
+                // accumulate projection onto sin/cos to estimate amplitude/phase
+                s_sum += vel * sinref;
+                c_sum += vel * cosref;
+                count += 1;
+
+                std::thread::sleep(sample_interval);
+            }
+
+            // compute amplitude and phase from projections
+            let n = count as f64;
+            let a_out = 2.0 * (s_sum * s_sum + c_sum * c_sum).sqrt() / n; // amplitude of output
+            let phase = (c_sum).atan2(s_sum); // radians, relative to sin ref
+
+            // compute input amplitude in velocity units if sim, else in command units
+            let amplitude_in_velocity = if is_simulation_enabled() {
+                let sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+                let gain = if motor_index == 1 { sim.gain_m1 } else { sim.gain_m2 } as f64;
+                gain * (amplitude_cmd as f64 / 63.0)
+            } else {
+                // for device, return per-command-unit gain (velocity per command unit)
+                amplitude_cmd as f64
+            };
+
+            let gain = if amplitude_in_velocity.abs() > 1e-6 {
+                a_out / amplitude_in_velocity
+            } else { 0.0 };
+
+            results.push(FrfPoint { freq_hz: freq, gain, phase_deg: phase.to_degrees() });
+        }
+
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("Failed to join: {:?}", e))?}
+
+// --- Command wrappers (forward to module implementations) ---
+
 #[tauri::command]
 async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || drive_simply(speed, motor_index))
-        .await
-        .map_err(|e| format!("Thread join error: {:?}", e))?
-}
-
-// Read encoder value in pulses per second
-fn read_speed(motor_index: u8) -> Result<i32, String> {
-    // println!("The read_speed is called");
-
-    // Acquire lock with error handling
-    let mut guard = ROBOCLAW.lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-    let mut roboclaw = guard.as_mut().ok_or("Roboclaw is not initialized")?;
-
-    // Data buffer
-    let mut data: Vec<u8> = Vec::new();
-
-    data.push(roboclaw.addr);
-
-    // Read Encoder Speed M1 -> 18
-    // Read Encoder Speed M2 -> 19
-    if motor_index == 1 {
-        data.push(18);
-    } else if motor_index == 2 {
-        data.push(19);
-    }
-
-    // Without CRC16
-
-    // Serial send/receive
-    let response = send_and_read(&data, &mut roboclaw)?;
-
-    // Check if the received data is empty
-    if response.is_empty() {
-        return Err("The response is empty".to_string()); 
-    }
-
-    // println!("[DEBUG] res in read_speed(): {:?}", response);
-
-    // If data exists
-    let cmd = if motor_index == 1 { 18 } else { 19 };
-    match parse_response(&response, roboclaw.addr, cmd) {
-        Ok(data) => {
-            let speed = ((data[0] as u32) << 24)
-                | ((data[1] as u32) << 16)
-                | ((data[2] as u32) << 8)
-                | (data[3] as u32);
-
-            let status = data[4];
-            
-            if status == 0 {
-                return Ok(speed as i32);
-            } else if status == 1 {
-                return Ok(-(speed as i32));
-            } else {
-                return Err("Invalid value".to_string());
-            }
-
-        }
-        Err(e) => {
-            eprintln!("[DEBUG] Failed to parse! {:?}", e);
-            return Err("Invalid response".to_string());
-        }
-    };
-}
-
-#[tauri::command]
-async fn read_speed_async(motor_index: u8) -> Result<i32, String> {
-    tauri::async_runtime::spawn_blocking(move || read_speed(motor_index))
-        .await
-        .map_err(|e| format!("Thread join error: {:?}", e))?
-}
-
-fn read_motor_currents() -> Result<(u32, u32), String> {
-    let mut guard = ROBOCLAW.lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
-
-    let cmd = 49;
-
-    // Data buffer
-    let mut data: Vec<u8> = Vec::new();
-
-    data.push(roboclaw.addr);
-    data.push(cmd);
-
-    // WITHOUT CRC16
-
-    let response = send_and_read(&data, &mut roboclaw)?;
-
-    if response.is_empty() {
-        return Err("Data is empty".into());
-    }
-
-    let result = match parse_response(&response, roboclaw.addr, cmd) {
-        Ok(data) => {
-            let m1_current = ((data[0] as u32) << 8)
-                | (data[1] as u32);
-
-            let m2_current = ((data[2] as u32) << 8)
-                | (data[3] as u32);
-
-            (m1_current, m2_current)
-        }
-        Err(_) => {
-            // eprintln!("Failed to parse".into());
-            return Err("Failed to parse".into());
-        }
-
-    };
-
-    let (m1_current, m2_current) = result;
-
-    println!("[DEBUG] m1_current: {:?}", m1_current);
-
-    Ok((m1_current, m2_current))
-
-}
-
-#[tauri::command]
-async fn read_motor_currents_async() -> Result<(u32, u32), String> {
-    tauri::async_runtime::spawn_blocking(move || read_motor_currents())
-        .await
-        .map_err(|e| format!("Failed to join{:?}", e))?
-}
-
-fn read_pwm_values() -> Result<(i32, i32), String> {
-    
-    let mut guard = ROBOCLAW.lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
-
-    let cmd = 48;
-    let mut data: Vec<u8> = Vec::new();
-
-    data.push(roboclaw.addr);
-    data.push(cmd);
-
-    // WITHOUT CRC!
-
-    let response = send_and_read(&data, &mut roboclaw)?;
-
-    if response.is_empty() {
-        return Err("Empty response".into());
-    }
-
-    let result = match parse_response(&response, roboclaw.addr, cmd) {
-        Ok(data) => {
-            println!("[DEBUG] Read PWM - Raw bytes: {:?}", data);
-            
-            // Parse as signed 16-bit integers (big-endian)
-            let m1_pwm_raw = ((data[0] as u16) << 8) | (data[1] as u16);
-            let m2_pwm_raw = ((data[2] as u16) << 8) | (data[3] as u16);
-            
-            let m1_pwm_signed = m1_pwm_raw as i16;
-            let m2_pwm_signed = m2_pwm_raw as i16;
-            
-            println!("[DEBUG] M1 PWM: raw_u16={}, signed_i16={}, bytes=[{:#04x}, {:#04x}]", 
-                     m1_pwm_raw, m1_pwm_signed, data[0], data[1]);
-            println!("[DEBUG] M2 PWM: raw_u16={}, signed_i16={}, bytes=[{:#04x}, {:#04x}]", 
-                     m2_pwm_raw, m2_pwm_signed, data[2], data[3]);
-            
-            let m1_duty_cycle = (m1_pwm_signed as f64) / 327.67;
-            let m2_duty_cycle = (m2_pwm_signed as f64) / 327.67;
-            
-            println!("[DEBUG] M1 duty cycle: {:.2}%, M2 duty cycle: {:.2}%", 
-                     m1_duty_cycle, m2_duty_cycle);
-
-            // Return signed values (-32767 to +32767)
-            (m1_pwm_signed as i32, m2_pwm_signed as i32)
-        }
-        Err(e) => {
-            return Err(format!("Failed to parse: {:?}", e));
-        }
-    };
-
-    let (m1_pwm, m2_pwm) = result;
-
-    Ok((m1_pwm, m2_pwm))
-
-}
-
-#[tauri::command]
-async fn read_pwm_values_async() -> Result<(i32, i32), String> {
-    tauri::async_runtime::spawn_blocking(|| read_pwm_values())
+    tauri::async_runtime::spawn_blocking(move || device::drive_simply_sync(speed, motor_index))
         .await
         .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
-fn reset_encoder() -> Result<(), String> {
- 
-    let mut guard = ROBOCLAW.lock()
-        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
-    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
+#[tauri::command]
+async fn drive_pwm_async(pwm: i16, motor_index: u8) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || device::drive_pwm_sync(pwm, motor_index))
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
+}
 
-    let cmd = 20;
+#[tauri::command]
+async fn read_speed_async(motor_index: u8) -> Result<i32, String> {
+    tauri::async_runtime::spawn_blocking(move || device::read_speed_sync(motor_index))
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
+}
 
-    let mut data: Vec<u8> = Vec::new();
+#[tauri::command]
+async fn read_motor_currents_async() -> Result<(u32, u32), String> {
+    tauri::async_runtime::spawn_blocking(move || device::read_motor_currents_sync())
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
+}
 
-    data.push(roboclaw.addr);
-    data.push(cmd);
-
-    // With crc16
-    let crc = calc_crc(&data);
-
-    let msb = (crc >> 8) as u8;
-    let lsb = (crc & 0xFF) as u8;
-    
-    // big endian
-    data.push(msb);
-    data.push(lsb);
-
-    let response = send_and_read(&data, &mut roboclaw)?;
-
-    let result = parse_response(&response, roboclaw.addr, cmd)?;
-
-    if result.get(0) == Some(&0xFF) {
-        Ok(()) 
-    } else {
-        Err("Failed to reset encoder".into())
-    }
-
+#[tauri::command]
+async fn read_pwm_values_async() -> Result<(i32, i32), String> {
+    tauri::async_runtime::spawn_blocking(move || device::read_pwm_values_sync())
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
 #[tauri::command]
 async fn reset_encoder_async() -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(|| reset_encoder())
+    tauri::async_runtime::spawn_blocking(move || device::reset_encoder_sync())
         .await
-        .map_err(|e| format!("Failed to join: {:?}",e))?
+        .map_err(|e| format!("Failed to join: {:?}", e))?
 }
 
-/// CRC16 (CCITT) calculation
-fn calc_crc(data: &[u8]) -> u16 {
-    // println!("[DEBUG] data for calc crc: {:?}", data);
+#[tauri::command]
+async fn configure_baud(baud_rate: u32) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || device::configure_baud_sync(baud_rate))
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
+}
 
-    let mut crc: u16 = 0;
+#[tauri::command]
+async fn configure_port(port_name: String, baud_rate: Option<u32>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || device::configure_port_sync(port_name, baud_rate))
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
+}
 
-    for &byte in data {
-        crc ^= (byte as u16) << 8;
-        for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 {
-                (crc << 1) ^ 0x1021
-            } else {
-                crc << 1
-            };
-        }
-    }
-    crc
+#[tauri::command]
+fn list_serial_ports() -> Result<Vec<String>, String> {
+    device::list_serial_ports_sync()
+}
+
+#[tauri::command]
+fn set_simulation_mode(enabled: bool) -> Result<(), String> {
+    sim::set_simulation_mode_sync(enabled)
+}
+
+#[tauri::command]
+fn set_sim_params(motor_index: u8, tau: f32, gain: f32) -> Result<(), String> {
+    sim::set_sim_params_sync(motor_index, tau, gain)
+}
+
+#[tauri::command]
+fn set_sim_params_js(params: JsonValue) -> Result<(), String> {
+    sim::set_sim_params_js_sync(params)
+}
+
+#[tauri::command]
+async fn estimate_tf_from_step(samples: Vec<StepSample>) -> Result<JsonValue, String> {
+    estimators::estimate_tf_from_step_sync(samples).await
+}
+
+#[tauri::command]
+async fn fit_frf_async(
+    freqs_hz: Vec<f64>,
+    gains: Vec<f64>,
+    phases_deg: Vec<f64>,
+    tau_min: f64,
+    tau_max: f64,
+    tau_points: u32,
+) -> Result<JsonValue, String> {
+    estimators::fit_frf_sync(freqs_hz, gains, phases_deg, tau_min, tau_max, tau_points).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -514,13 +370,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![ // Register functions invoked from the frontend
             drive_simply_async,
+            drive_pwm_async,
             read_speed_async,
+            run_frequency_response_async,
+            run_step_response_async,
+            run_step_response_device_async,
             read_motor_currents_async,
             read_pwm_values_async,
             reset_encoder_async,
             configure_baud,
             configure_port,
             list_serial_ports,
+            set_simulation_mode,
+            set_sim_params,
+            set_sim_params_js,
+            estimate_tf_from_step,
+            fit_frf_async,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
