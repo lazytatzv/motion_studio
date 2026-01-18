@@ -375,7 +375,7 @@ async fn read_pid_async(motor_index: u8) -> Result<PidParams, String> {
 }
 
 #[tauri::command]
-async fn set_pid_async(motor_index: u8, p: u32, i: u32, d: u32, max_i: u32, deadzone: u32, min: i32, max: i32) -> Result<(), String> {
+async fn set_pid_async(motor_index: u8, p: i32, i: i32, d: i32, max_i: i32, deadzone: i32, min: i32, max: i32) -> Result<(), String> {
     let params = PidParams { p, i, d, max_i, deadzone, min, max };
     device::set_pid_sync(motor_index, params)
 }

@@ -333,11 +333,11 @@ pub fn reset_encoder_sync() -> Result<(), String> {
 // Struct for PID parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PidParams {
-    pub p: u32,
-    pub i: u32,
-    pub d: u32,
-    pub max_i: u32,
-    pub deadzone: u32,
+    pub p: i32,
+    pub i: i32,
+    pub d: i32,
+    pub max_i: i32,
+    pub deadzone: i32,
     pub min: i32,
     pub max: i32,
 }
@@ -369,11 +369,11 @@ pub fn read_pid_sync(motor_index: u8) -> Result<PidParams, String> {
     let response = send_and_read(&data, &mut roboclaw)?;
     let result = parse_response(&response, roboclaw.addr, cmd)?;
     if result.len() >= 28 {
-        let p = u32::from_be_bytes([result[0], result[1], result[2], result[3]]);
-        let i = u32::from_be_bytes([result[4], result[5], result[6], result[7]]);
-        let d = u32::from_be_bytes([result[8], result[9], result[10], result[11]]);
-        let max_i = u32::from_be_bytes([result[12], result[13], result[14], result[15]]);
-        let deadzone = u32::from_be_bytes([result[16], result[17], result[18], result[19]]);
+        let p = i32::from_be_bytes([result[0], result[1], result[2], result[3]]);
+        let i = i32::from_be_bytes([result[4], result[5], result[6], result[7]]);
+        let d = i32::from_be_bytes([result[8], result[9], result[10], result[11]]);
+        let max_i = i32::from_be_bytes([result[12], result[13], result[14], result[15]]);
+        let deadzone = i32::from_be_bytes([result[16], result[17], result[18], result[19]]);
         let min = i32::from_be_bytes([result[20], result[21], result[22], result[23]]);
         let max = i32::from_be_bytes([result[24], result[25], result[26], result[27]]);
         Ok(PidParams { p, i, d, max_i, deadzone, min, max })
