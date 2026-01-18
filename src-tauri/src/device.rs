@@ -342,6 +342,10 @@ pub struct PidParams {
     pub max: i32,
 }
 
+/// Read RoboClaw position PID constants for the specified motor.
+/// Uses command 94 for M1 or 95 for M2.
+/// Returns: P, I, D, MaxI, Deadzone, MinPos, MaxPos (all 32-bit signed integers).
+/// Used for position control commands or when encoders are enabled in RC/Analog modes.
 pub fn read_pid_sync(motor_index: u8) -> Result<PidParams, String> {
     if is_simulation_enabled() {
         // Simulation: return default PID values
@@ -382,6 +386,12 @@ pub fn read_pid_sync(motor_index: u8) -> Result<PidParams, String> {
     }
 }
 
+
+// set pid constant (position)
+/// Set RoboClaw position PID constants for the specified motor.
+/// Uses command 61 for M1 or 62 for M2.
+/// Parameters: D, P, I, MaxI, Deadzone, MinPos, MaxPos (all 32-bit signed integers).
+/// Used for position control commands or when encoders are enabled in RC/Analog modes.
 pub fn set_pid_sync(motor_index: u8, params: PidParams) -> Result<(), String> {
     if is_simulation_enabled() {
         // Simulation: just return Ok
