@@ -338,19 +338,19 @@ pub struct PidParams {
     pub d: i32,
     pub max_i: i32,
     pub deadzone: i32,
-    pub min: i32,
-    pub max: i32,
+    pub min: i32, // max_pos
+    pub max: i32, // min_pos
 }
 
 /// Read RoboClaw position PID constants for the specified motor.
-/// Uses command 94 for M1 or 95 for M2.
+/// Uses command 63 for M1 or 64 for M2.
 /// Returns: P, I, D, MaxI, Deadzone, MinPos, MaxPos (all 32-bit signed integers).
 /// Used for position control commands or when encoders are enabled in RC/Analog modes.
 pub fn read_pid_sync(motor_index: u8) -> Result<PidParams, String> {
     if is_simulation_enabled() {
         // Simulation: return default PID values
         return Ok(PidParams {
-            p: 0x00010000, // Default P
+            p: 0x00010000, // Default P // is that correct?
             i: 0x00008000, // Default I
             d: 0x00004000, // Default D
             max_i: 0x00002000,
@@ -361,17 +361,34 @@ pub fn read_pid_sync(motor_index: u8) -> Result<PidParams, String> {
     }
     let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
-    let cmd = if motor_index == 1 { 94 } else { 95 }; // 94 for M1, 95 for M2
+    
+    let cmd = if motor_index == 1 {
+        63
+    } else {
+        64
+    }; // 63 for M1, 64 for M2
+    
+    // data buffer
     let mut data: Vec<u8> = Vec::new();
+    
     data.push(roboclaw.addr);
     data.push(cmd);
-    let crc = calc_crc(&data);
-    let msb = (crc >> 8) as u8;
-    let lsb = (crc & 0xFF) as u8;
-    data.push(msb);
-    data.push(lsb);
+
+    // Without CRC based on datasheet
+
+    // // CRC calculation
+    // let crc = calc_crc(&data);
+    // let msb = (crc >> 8) as u8;
+    // let lsb = (crc & 0xFF) as u8;
+
+    // // Set CRC
+    // data.push(msb);
+    // data.push(lsb);
+
     let response = send_and_read(&data, &mut roboclaw)?;
     let result = parse_response(&response, roboclaw.addr, cmd)?;
+
+    // Parse PID params from response
     if result.len() >= 28 {
         let p = i32::from_be_bytes([result[0], result[1], result[2], result[3]]);
         let i = i32::from_be_bytes([result[4], result[5], result[6], result[7]]);
@@ -393,31 +410,56 @@ pub fn read_pid_sync(motor_index: u8) -> Result<PidParams, String> {
 /// Parameters: D, P, I, MaxI, Deadzone, MinPos, MaxPos (all 32-bit signed integers).
 /// Used for position control commands or when encoders are enabled in RC/Analog modes.
 pub fn set_pid_sync(motor_index: u8, params: PidParams) -> Result<(), String> {
+
     if is_simulation_enabled() {
         // Simulation: just return Ok
         return Ok(());
     }
+
     let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
-    let cmd = if motor_index == 1 { 61 } else { 62 }; // 61 for M1, 62 for M2
+
+    let cmd = if motor_index == 1 {
+        61 
+    } else {
+        62 
+    }; // 61 for M1, 62 for M2
+    
+    // data buffer
     let mut data: Vec<u8> = Vec::new();
+    
     data.push(roboclaw.addr);
     data.push(cmd);
+
+    // i32 -> 8 x 4 
+    // bit endian order
+    data.extend_from_slice(&params.d.to_be_bytes());
     data.extend_from_slice(&params.p.to_be_bytes());
     data.extend_from_slice(&params.i.to_be_bytes());
-    data.extend_from_slice(&params.d.to_be_bytes());
     data.extend_from_slice(&params.max_i.to_be_bytes());
     data.extend_from_slice(&params.deadzone.to_be_bytes());
     data.extend_from_slice(&params.min.to_be_bytes());
     data.extend_from_slice(&params.max.to_be_bytes());
+
+    // CRC calculation
     let crc = calc_crc(&data);
     let msb = (crc >> 8) as u8;
     let lsb = (crc & 0xFF) as u8;
+
+    // Set CRC
     data.push(msb);
     data.push(lsb);
+
+    // Send command and read response
     let response = send_and_read(&data, &mut roboclaw)?;
     let result = parse_response(&response, roboclaw.addr, cmd)?;
-    if result.get(0) == Some(&0xFF) { Ok(()) } else { Err("Failed to set PID".into()) }
+    
+    // Check for success
+    if result.get(0) == Some(&0xFF) { 
+        Ok(()) 
+    } else {
+        Err("Failed to set PID".into()) 
+    }
 }
 
 // Async wrappers moved to crate root (`lib.rs`) as tauri command handlers.
