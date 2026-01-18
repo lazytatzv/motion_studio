@@ -16,11 +16,13 @@ Linux GUI for **Basicmicro RoboClaw motor drivers**. This is an **unofficial** c
 - Read encoder speed, motor current, and PWM values
 - Reset encoders
 
-#### Experimental
+#### Experimental / Work in Progress
 
 - Device Simulation
 - Step and frequency response simulation/analysis
 - CSV output
+- Manual/Automated PID tuning
+- ROS2 integration
 
 ## Install
 
