@@ -395,6 +395,9 @@ pub fn reset_encoder_sync() -> Result<(), String> {
     if is_simulation_enabled() {
         let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
         sim.m1_speed = 64; sim.m2_speed = 64; sim.m1_pwm = 0; sim.m2_pwm = 0; sim.m1_mode_pwm = false; sim.m2_mode_pwm = false; sim.m1_vel = 0.0; sim.m2_vel = 0.0;
+        // Also clear encoder counts in simulation
+        sim.m1_encoder = 0;
+        sim.m2_encoder = 0;
         return Ok(());
     }
     let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -684,6 +687,8 @@ pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<serde_json
     let sample_interval = 100u32; // ms
     let mut encoder_samples: Vec<i64> = Vec::new();
 
+    // Reset encoder counters before measuring
+    reset_encoder_sync()?;
     if is_simulation_enabled() {
         // Use sim encoder counters: set full PWM for the duration
         let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;

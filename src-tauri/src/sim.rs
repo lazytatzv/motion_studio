@@ -285,5 +285,8 @@ mod tests {
         // in sim, result is JSON with qpps and encoder_samples
         assert!(res.get("qpps").is_some());
         assert!(res.get("encoder_samples").is_some());
+        // The first encoder sample should be zero since we reset before measurement
+        let encs = res.get("encoder_samples").and_then(|v| v.as_array()).expect("encoder_samples array");
+        assert!(encs[0].as_i64().unwrap_or(-1) == 0);
     }
 }
