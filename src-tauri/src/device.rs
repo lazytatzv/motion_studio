@@ -3,6 +3,7 @@ use std::time::Duration;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use serialport::SerialPort;
+use serde::{Serialize, Deserialize};
 
 use crate::sim::{is_simulation_enabled, sim_update, SIM_STATE, SIMULATION_ENABLED};
 
@@ -327,6 +328,86 @@ pub fn reset_encoder_sync() -> Result<(), String> {
     let response = send_and_read(&data, &mut roboclaw)?;
     let result = parse_response(&response, roboclaw.addr, cmd)?;
     if result.get(0) == Some(&0xFF) { Ok(()) } else { Err("Failed to reset encoder".into()) }
+}
+
+// Struct for PID parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PidParams {
+    pub p: u32,
+    pub i: u32,
+    pub d: u32,
+    pub max_i: u32,
+    pub deadzone: u32,
+    pub min: i32,
+    pub max: i32,
+}
+
+pub fn read_pid_sync(motor_index: u8) -> Result<PidParams, String> {
+    if is_simulation_enabled() {
+        // Simulation: return default PID values
+        return Ok(PidParams {
+            p: 0x00010000, // Default P
+            i: 0x00008000, // Default I
+            d: 0x00004000, // Default D
+            max_i: 0x00002000,
+            deadzone: 0,
+            min: -32767,
+            max: 32767,
+        });
+    }
+    let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
+    let cmd = if motor_index == 1 { 94 } else { 95 }; // 94 for M1, 95 for M2
+    let mut data: Vec<u8> = Vec::new();
+    data.push(roboclaw.addr);
+    data.push(cmd);
+    let crc = calc_crc(&data);
+    let msb = (crc >> 8) as u8;
+    let lsb = (crc & 0xFF) as u8;
+    data.push(msb);
+    data.push(lsb);
+    let response = send_and_read(&data, &mut roboclaw)?;
+    let result = parse_response(&response, roboclaw.addr, cmd)?;
+    if result.len() >= 28 {
+        let p = u32::from_be_bytes([result[0], result[1], result[2], result[3]]);
+        let i = u32::from_be_bytes([result[4], result[5], result[6], result[7]]);
+        let d = u32::from_be_bytes([result[8], result[9], result[10], result[11]]);
+        let max_i = u32::from_be_bytes([result[12], result[13], result[14], result[15]]);
+        let deadzone = u32::from_be_bytes([result[16], result[17], result[18], result[19]]);
+        let min = i32::from_be_bytes([result[20], result[21], result[22], result[23]]);
+        let max = i32::from_be_bytes([result[24], result[25], result[26], result[27]]);
+        Ok(PidParams { p, i, d, max_i, deadzone, min, max })
+    } else {
+        Err("Invalid response length for PID read".into())
+    }
+}
+
+pub fn set_pid_sync(motor_index: u8, params: PidParams) -> Result<(), String> {
+    if is_simulation_enabled() {
+        // Simulation: just return Ok
+        return Ok(());
+    }
+    let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
+    let cmd = if motor_index == 1 { 61 } else { 62 }; // 61 for M1, 62 for M2
+    let mut data: Vec<u8> = Vec::new();
+    data.push(roboclaw.addr);
+    data.push(cmd);
+    data.extend_from_slice(&params.p.to_be_bytes());
+    data.extend_from_slice(&params.i.to_be_bytes());
+    data.extend_from_slice(&params.d.to_be_bytes());
+    data.extend_from_slice(&params.max_i.to_be_bytes());
+    data.extend_from_slice(&params.deadzone.to_be_bytes());
+    data.extend_from_slice(&params.min.to_be_bytes());
+    data.extend_from_slice(&params.max.to_be_bytes());
+    let crc = calc_crc(&data);
+    let msb = (crc >> 8) as u8;
+    let lsb = (crc & 0xFF) as u8;
+    data.push(msb);
+    data.push(lsb);
+    let response = send_and_read(&data, &mut roboclaw)?;
+    let result = parse_response(&response, roboclaw.addr, cmd)?;
+    if result.get(0) == Some(&0xFF) { Ok(()) } else { Err("Failed to set PID".into()) }
 }
 
 // Async wrappers moved to crate root (`lib.rs`) as tauri command handlers.

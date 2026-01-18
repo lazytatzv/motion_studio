@@ -7,6 +7,7 @@ import { ConfigurationSection } from "./components/ConfigurationSection";
 import { TelemetrySection } from "./components/TelemetrySection";
 import { StepResponseSection } from "./components/StepResponseSection";
 import FrequencyResponseSection from "./components/FrequencyResponseSection";
+import { PidSection } from "./components/PidSection";
 import { styles } from "./uiStyles";
 
 const SPEED_MIN = 0;
@@ -545,6 +546,9 @@ function App() {
         simGainM2={simGainM2}
         onChangeSimGainM2={setSimGainM2}
       />
+
+      <PidSection motorIndex={1} />
+      <PidSection motorIndex={2} />
 
       <TelemetrySection
         velM1={velM1}

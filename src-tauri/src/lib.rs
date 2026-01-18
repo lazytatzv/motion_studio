@@ -350,6 +350,8 @@ fn set_sim_params_js(params: JsonValue) -> Result<(), String> {
     sim::set_sim_params_js_sync(params)
 }
 
+use crate::device::{PidParams};
+
 #[tauri::command]
 async fn estimate_tf_from_step(samples: Vec<StepSample>) -> Result<JsonValue, String> {
     estimators::estimate_tf_from_step_sync(samples).await
@@ -365,6 +367,17 @@ async fn fit_frf_async(
     tau_points: u32,
 ) -> Result<JsonValue, String> {
     estimators::fit_frf_sync(freqs_hz, gains, phases_deg, tau_min, tau_max, tau_points).await
+}
+
+#[tauri::command]
+async fn read_pid_async(motor_index: u8) -> Result<PidParams, String> {
+    device::read_pid_sync(motor_index)
+}
+
+#[tauri::command]
+async fn set_pid_async(motor_index: u8, p: u32, i: u32, d: u32, max_i: u32, deadzone: u32, min: i32, max: i32) -> Result<(), String> {
+    let params = PidParams { p, i, d, max_i, deadzone, min, max };
+    device::set_pid_sync(motor_index, params)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -389,6 +402,8 @@ pub fn run() {
             set_sim_params_js,
             estimate_tf_from_step,
             fit_frf_async,
+            read_pid_async,
+            set_pid_async,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
