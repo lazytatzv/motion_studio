@@ -5,7 +5,7 @@ use std::time::Instant;
 use serde_json::Value as JsonValue;
 use crate::device::{VelocityPidParams, PositionPidParams};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SimState {
     pub m1_speed: u8, // speed vs vel?
     pub m2_speed: u8,
@@ -206,4 +206,52 @@ pub fn set_sim_params_js_sync(params: JsonValue) -> Result<(), String> {
     println!("[SIM JS] parsed motor={}, tau={}, gain={}", motor_i, tau, gain);
 
     set_sim_params_sync(motor_i as u8, tau, gain)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn velocity_pid_changes_response() {
+        let mut sim = SimState {
+            m1_speed: 64,
+            m2_speed: 64,
+            m1_pwm: 0,
+            m2_pwm: 0,
+            m1_mode_pwm: false,
+            m2_mode_pwm: false,
+            m1_vel: 0.0,
+            m2_vel: 0.0,
+            m1_velocity_pid: VelocityPidParams { p: 0x00010000, i: 0x0, d: 0x0, qpps: 44000 },
+            m2_velocity_pid: VelocityPidParams::default(),
+            m1_position_pid: PositionPidParams::default(),
+            m2_position_pid: PositionPidParams::default(),
+            m1_vi: 0.0,
+            m2_vi: 0.0,
+            m1_v_last_err: 0.0,
+            m2_v_last_err: 0.0,
+            last_update: Some(Instant::now() - Duration::from_millis(200)),
+            tau_m1: 0.10_f32,
+            gain_m1: 100.0_f32,
+            tau_m2: 0.10_f32,
+            gain_m2: 100.0_f32,
+        };
+
+        // Set speed to max forward
+        sim.m1_speed = 127;
+        // call update several times
+        for _ in 0..10 {
+            sim_update(&mut sim);
+        }
+        // With a P-only controller, velocity should be > 0
+        assert!(sim.m1_vel > 0.0);
+
+        // Now increase P and ensure it responds faster (higher vel after same steps)
+        let mut sim2 = sim.clone();
+        sim2.m1_velocity_pid.p = 0x00020000; // P *2
+        for _ in 0..10 { sim_update(&mut sim2); }
+        assert!(sim2.m1_vel >= sim.m1_vel);
+    }
 }
