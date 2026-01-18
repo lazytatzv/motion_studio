@@ -685,11 +685,11 @@ pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<serde_json
     let mut encoder_samples: Vec<i64> = Vec::new();
 
     if is_simulation_enabled() {
-        // Use sim encoder counters
+        // Use sim encoder counters: set full PWM for the duration
         let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
-        let prev_speed = if motor_index == 1 { sim.m1_speed } else { sim.m2_speed };
-        // set to max
-        if motor_index == 1 { sim.m1_speed = 127; } else { sim.m2_speed = 127; }
+        let prev_pwm = if motor_index == 1 { sim.m1_pwm } else { sim.m2_pwm };
+        let prev_mode = if motor_index == 1 { sim.m1_mode_pwm } else { sim.m2_mode_pwm };
+        if motor_index == 1 { sim.m1_pwm = 32767; sim.m1_mode_pwm = true; } else { sim.m2_pwm = 32767; sim.m2_mode_pwm = true; }
         // wait a bit to settle and sample counts
         let mut total = 0u32;
         while total < duration_ms {
@@ -698,11 +698,11 @@ pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<serde_json
             std::thread::sleep(std::time::Duration::from_millis(sample_interval as u64));
             total += sample_interval;
         }
-        // restore
-        if motor_index == 1 { sim.m1_speed = prev_speed; } else { sim.m2_speed = prev_speed; }
+        // restore previous pwm and mode
+        if motor_index == 1 { sim.m1_pwm = prev_pwm; sim.m1_mode_pwm = prev_mode; } else { sim.m2_pwm = prev_pwm; sim.m2_mode_pwm = prev_mode; }
     } else {
-        // Real device: command full speed and sample encoder counts via Read All Status
-        drive_simply_sync(127, motor_index)?;
+        // Real device: set PWM to full (signed 16-bit max) and sample encoder counts via Read All Status
+        drive_pwm_sync(32767, motor_index)?;
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut elapsed = 0u32;
         while elapsed < duration_ms {
@@ -717,7 +717,8 @@ pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<serde_json
             std::thread::sleep(std::time::Duration::from_millis(sample_interval as u64));
             elapsed += sample_interval;
         }
-        drive_simply_sync(64, motor_index)?; // stop
+        // stop PWM (0)
+        drive_pwm_sync(0, motor_index)?;
     }
 
     if encoder_samples.len() < 2 { return Err("Not enough encoder samples".into()); }

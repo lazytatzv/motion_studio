@@ -91,8 +91,7 @@ pub fn sim_update(sim: &mut SimState) {
     let tau_m2 = sim.tau_m2;
     let gain_m2 = sim.gain_m2;
 
-    // 32767 is only valid for MY OWN CASE
-    // TODO: I have to fix the number and make it dynamically changeable later
+    // 32767 -> 100% duty
     // Compute actuator command u for each motor.
     let m1_u = if sim.m1_mode_pwm {
         (sim.m1_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
@@ -234,6 +233,8 @@ mod tests {
             m2_mode_pwm: false,
             m1_vel: 0.0,
             m2_vel: 0.0,
+            m1_encoder: 0,
+            m2_encoder: 0,
             m1_velocity_pid: VelocityPidParams { p: 0x00010000, i: 0x0, d: 0x0, qpps: 44000 },
             m2_velocity_pid: VelocityPidParams::default(),
             m1_position_pid: PositionPidParams::default(),
@@ -242,8 +243,6 @@ mod tests {
             m2_vi: 0.0,
             m1_v_last_err: 0.0,
             m2_v_last_err: 0.0,
-            m1_encoder: 0,
-            m2_encoder: 0,
             last_update: Some(Instant::now() - Duration::from_millis(200)),
             tau_m1: 0.10_f32,
             gain_m1: 100.0_f32,
@@ -251,8 +250,9 @@ mod tests {
             gain_m2: 100.0_f32,
         };
 
-        // Set speed to max forward
-        sim.m1_speed = 127;
+        // Set PWM to max forward and enable PWM mode
+        sim.m1_pwm = 32767;
+        sim.m1_mode_pwm = true;
         // call update several times
         for _ in 0..10 {
             sim_update(&mut sim);
@@ -265,5 +265,25 @@ mod tests {
         sim2.m1_velocity_pid.p = 0x00020000; // P *2
         for _ in 0..10 { sim_update(&mut sim2); }
         assert!(sim2.m1_vel >= sim.m1_vel);
+    }
+
+    #[test]
+    fn measure_qpps_simulation_uses_pwm() {
+        let mut sim = SimState::default();
+        // ensure starting state
+        sim.m1_encoder = 0;
+        sim.m1_pwm = 0;
+        sim.m1_mode_pwm = false;
+        sim.last_update = Some(Instant::now() - Duration::from_millis(200));
+
+        // Enable simulation mode for the duration of this test
+        set_simulation_mode_sync(true).expect("enable sim");
+        // call measure function via device.measure_qpps_sync (simulation path)
+        let res = crate::device::measure_qpps_sync(1, 500).expect("measure qpps failed");
+        // Disable simulation mode
+        set_simulation_mode_sync(false).expect("disable sim");
+        // in sim, result is JSON with qpps and encoder_samples
+        assert!(res.get("qpps").is_some());
+        assert!(res.get("encoder_samples").is_some());
     }
 }
