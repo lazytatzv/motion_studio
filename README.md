@@ -9,7 +9,7 @@ Linux GUI for **Basicmicro RoboClaw motor drivers**. This is an **unofficial** c
 
 #### Main
 
-- Drive M1/M2 with speed and pwm input
+- Drive M1/M2 with speed and PWM input
 - Stop, max CW, max CCW controls
 - Configure baud rate and serial port
 - List available serial ports
@@ -19,7 +19,7 @@ Linux GUI for **Basicmicro RoboClaw motor drivers**. This is an **unofficial** c
 #### Experimental
 
 - Device Simulation
-- Step and frequency response sim/analysis
+- Step and frequency response simulation/analysis
 - CSV output
 
 ## Install
@@ -53,7 +53,7 @@ roboclaw-studio
 
 #### Note
 
-This version is stable, but not maintained as often as AUR pkg.
+This version is stable, but not maintained as often as AUR package.
 
 Download the latest `.deb` from GitHub Releases and install:
 
@@ -61,11 +61,37 @@ Download the latest `.deb` from GitHub Releases and install:
 sudo apt install ./roboclaw-studio_*.deb
 ```
 
+### Manual Build (from source)
+
+If you prefer to build from source:
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/lazytatzv/motion_studio.git
+cd motion_studio
+```
+
+2. Install dependencies:
+
+```bash
+pnpm install
+```
+
+3. Build the app:
+
+```bash
+pnpm build
+pnpm tauri build
+```
+
+The Debian package is generated under `src-tauri/target/release/bundle/deb/`.
+
 ### Ubuntu / Debian (APT repo)
 
 #### CAUTION!!
 
-This feature is exmerimental. I recommend installing this app with .deb if you use Debian-based Linux.
+This feature is experimental. I recommend installing this app with .deb if you use Debian-based Linux.
 
 1) Install the repo key:
 
@@ -103,7 +129,7 @@ ROBOCLAW_PORT=/dev/ttyACM1 roboclaw-studio
 
 However, `roboclaw-studio` can dynamically detect serial ports, so you don't need to specify the environment variable.
 
-If ports aren't detected, please confirm the permission is valid. You can write `Udev Rules` or just run `chmod` to make these accessible.
+If ports aren't detected, please confirm the permissions are valid. You can write udev rules or just run `chmod` to make them accessible.
 
 ## Development
 
@@ -112,7 +138,7 @@ If ports aren't detected, please confirm the permission is valid. You can write 
 - Node.js (LTS)
 - pnpm
 - Rust (stable)
-- Linux deps for Tauri:
+- Linux dependencies for Tauri:
 	- `libwebkit2gtk-4.1-dev`
 	- `libgtk-3-dev`
 	- `libayatana-appindicator3-dev`
