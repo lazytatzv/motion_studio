@@ -2,6 +2,9 @@
 
 Linux GUI for **Basicmicro RoboClaw motor drivers**. This is an **unofficial** community-built app with a workflow inspired by the Windows-only Motion Studio. It is not affiliated with Basicmicro.
 
+![Look](docs/assets/Screenshot%20From%202026-01-18%2012-46-11.png)
+
+![Telemetry](docs/assets/Screenshot%20From%202026-01-18%2012-46-11.png)
 ## Features
 
 - Drive M1/M2 with speed input
