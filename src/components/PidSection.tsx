@@ -33,7 +33,7 @@ export function PidSection({ motorIndex }: PidSectionProps) {
     setLoading(true);
     setError("");
     try {
-      const result: PidParams = await invoke("read_pid_async", { motorIndex });
+      const result: PidParams = await invoke("read_position_pid_async", { motorIndex });
       setPid(result);
     } catch (e) {
       setError(e as string);
@@ -45,7 +45,7 @@ export function PidSection({ motorIndex }: PidSectionProps) {
     setLoading(true);
     setError("");
     try {
-      await invoke("set_pid_async", {
+      await invoke("set_position_pid_async", {
         motorIndex,
         p: pid.p,
         i: pid.i,

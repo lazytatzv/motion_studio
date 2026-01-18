@@ -8,6 +8,7 @@ use serde_json::Value as JsonValue;
 
 use crate::sim::{is_simulation_enabled, SIM_STATE, sim_update};
 use crate::estimators::{FrfPoint, StepSample};
+use crate::device::PidParams;
 
 const SIMULATED_PORT: &str = "SIMULATED";
 
@@ -350,8 +351,6 @@ fn set_sim_params_js(params: JsonValue) -> Result<(), String> {
     sim::set_sim_params_js_sync(params)
 }
 
-use crate::device::{PidParams};
-
 #[tauri::command]
 async fn estimate_tf_from_step(samples: Vec<StepSample>) -> Result<JsonValue, String> {
     estimators::estimate_tf_from_step_sync(samples).await
@@ -370,14 +369,25 @@ async fn fit_frf_async(
 }
 
 #[tauri::command]
-async fn read_pid_async(motor_index: u8) -> Result<PidParams, String> {
-    device::read_pid_sync(motor_index)
+async fn read_position_pid_async(motor_index: u8) -> Result<PidParams, String> {
+    device::read_position_pid_sync(motor_index)
 }
 
 #[tauri::command]
-async fn set_pid_async(motor_index: u8, p: i32, i: i32, d: i32, max_i: i32, deadzone: i32, min: i32, max: i32) -> Result<(), String> {
+async fn set_position_pid_async(motor_index: u8, p: i32, i: i32, d: i32, max_i: i32, deadzone: i32, min: i32, max: i32) -> Result<(), String> {
     let params = PidParams { p, i, d, max_i, deadzone, min, max };
-    device::set_pid_sync(motor_index, params)
+    device::set_position_pid_sync(motor_index, params)
+}
+
+#[tauri::command]
+async fn read_velocity_pid_async(motor_index: u8) -> Result<PidParams, String> {
+    device::read_velocity_pid_sync(motor_index)
+}
+
+#[tauri::command]
+async fn set_velocity_pid_async(motor_index: u8, p: i32, i: i32, d: i32, max_i: i32, deadzone: i32, min: i32, max: i32) -> Result<(), String> {
+    let params = PidParams { p, i, d, max_i, deadzone, min, max };
+    device::set_velocity_pid_sync(motor_index, params)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -402,8 +412,10 @@ pub fn run() {
             set_sim_params_js,
             estimate_tf_from_step,
             fit_frf_async,
-            read_pid_async,
-            set_pid_async,
+            read_position_pid_async,
+            set_position_pid_async,
+            read_velocity_pid_async,
+            set_velocity_pid_async,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
