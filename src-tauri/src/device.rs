@@ -443,6 +443,7 @@ pub fn set_position_pid_sync(motor_index: u8, params: PositionPidParams) -> Resu
 
     // i32 -> 8 x 4 
     // bit endian order
+    // D -> P -> I order not PID
     data.extend_from_slice(&params.d.to_be_bytes());
     data.extend_from_slice(&params.p.to_be_bytes());
     data.extend_from_slice(&params.i.to_be_bytes());
@@ -477,6 +478,7 @@ pub fn set_position_pid_sync(motor_index: u8, params: PositionPidParams) -> Resu
 /// Returns: P, I, D, QPPS (all 32-bit signed integers).
 /// Used for velocity control commands.
 pub fn read_velocity_pid_sync(motor_index: u8) -> Result<VelocityPidParams, String> {
+
     if is_simulation_enabled() {
         // Simulation: return default PID values
         return Ok(VelocityPidParams {
@@ -486,19 +488,32 @@ pub fn read_velocity_pid_sync(motor_index: u8) -> Result<VelocityPidParams, Stri
             qpps: 44000, // Default QPPS
         });
     }
+    
     let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
-    let cmd = if motor_index == 1 { 55 } else { 56 }; // 55 for M1, 56 for M2
+    
+    let cmd = if motor_index == 1 {
+        55
+    } else {
+        56
+    }; // 55 for M1, 56 for M2
+
+    // data buffer
     let mut data: Vec<u8> = Vec::new();
+
     data.push(roboclaw.addr);
     data.push(cmd);
-    let crc = calc_crc(&data);
-    let msb = (crc >> 8) as u8;
-    let lsb = (crc & 0xFF) as u8;
-    data.push(msb);
-    data.push(lsb);
+
+    // Without CRC!
+    // let crc = calc_crc(&data);
+    // let msb = (crc >> 8) as u8;
+    // let lsb = (crc & 0xFF) as u8;
+    // data.push(msb);
+    // data.push(lsb);
+
     let response = send_and_read(&data, &mut roboclaw)?;
     let result = parse_response(&response, roboclaw.addr, cmd)?;
+
     if result.len() >= 16 {
         let p = i32::from_be_bytes([result[0], result[1], result[2], result[3]]);
         let i = i32::from_be_bytes([result[4], result[5], result[6], result[7]]);
@@ -513,29 +528,50 @@ pub fn read_velocity_pid_sync(motor_index: u8) -> Result<VelocityPidParams, Stri
 /// Set RoboClaw velocity PID constants for the specified motor.
 /// Uses command 28 for M1 or 29 for M2.
 /// Parameters: D, P, I, QPPS (all 32-bit signed integers).
+/// QPPS is the speed of the encoder when the motor is at 100% power.
+/// Default values: QPPS = 44000, P = 0x00010000, I = 0x00008000, D = 0x00004000.
 /// Used for velocity control commands.
 pub fn set_velocity_pid_sync(motor_index: u8, params: VelocityPidParams) -> Result<(), String> {
+
     if is_simulation_enabled() {
         // Simulation: just return Ok
         return Ok(());
     }
+
     let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
     let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
-    let cmd = if motor_index == 1 { 28 } else { 29 }; // 28 for M1, 29 for M2
+    
+    let cmd = if motor_index == 1 {
+        28
+    } else {
+        29
+    }; // 28 for M1, 29 for M2
+    
+    // data buffer
     let mut data: Vec<u8> = Vec::new();
+    
     data.push(roboclaw.addr);
     data.push(cmd);
+    
+    // D -> P -> I order
     data.extend_from_slice(&params.d.to_be_bytes());
     data.extend_from_slice(&params.p.to_be_bytes());
     data.extend_from_slice(&params.i.to_be_bytes());
     data.extend_from_slice(&params.qpps.to_be_bytes());
+    
+    // CRC calculation
     let crc = calc_crc(&data);
     let msb = (crc >> 8) as u8;
     let lsb = (crc & 0xFF) as u8;
+
+    // Set CRC
     data.push(msb);
     data.push(lsb);
+
     let response = send_and_read(&data, &mut roboclaw)?;
     let result = parse_response(&response, roboclaw.addr, cmd)?;
+    
+    // Check for success
     if result.get(0) == Some(&0xFF) { 
         Ok(()) 
     } else {
