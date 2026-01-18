@@ -22,6 +22,7 @@ export const FrequencyResponseSection: React.FC<Props> = ({ driveEnabled, motorI
 	const [sampleIntervalMs, setSampleIntervalMs] = useState<number>(10);
 	const [running, setRunning] = useState<boolean>(false);
 	const [results, setResults] = useState<{ freq: number; gain: number; phase: number }[]>([]);
+	const [isOpen, setIsOpen] = useState(false);
 
 	const runFrf = async () => {
 		if (!driveEnabled) return;
@@ -135,12 +136,13 @@ export const FrequencyResponseSection: React.FC<Props> = ({ driveEnabled, motorI
 
 	return (
 		<div className="border border-slate-700 rounded-lg p-4 bg-slate-800">
-			<div className="flex items-center justify-between">
-				<div>
-					<h3 className="text-lg font-semibold text-slate-50">Frequency Response (M{motorIndex})</h3>
-					<p className="text-sm text-slate-400">Per-frequency steady-state sine tests — Gain shown as 20·log10(|Y/X|) (dB), Phase in degrees.</p>
-				</div>
-				<div className="flex gap-2">
+		<h3 className="text-lg font-semibold text-slate-50 cursor-pointer" onClick={() => setIsOpen(!isOpen)}>Frequency Response (M{motorIndex}) {isOpen ? '▼' : '▶'}</h3>
+		{isOpen && (
+			<>
+				<p className="text-sm text-slate-400">Per-frequency steady-state sine tests — Gain shown as 20·log10(|Y/X|) (dB), Phase in degrees.</p>
+				<div className="flex items-center justify-between mt-2">
+					<div></div>
+					<div className="flex gap-2">
 					<button
 						className="px-3 py-1 bg-slate-600 text-white rounded disabled:opacity-50"
 						onClick={runFrf}
@@ -233,9 +235,9 @@ export const FrequencyResponseSection: React.FC<Props> = ({ driveEnabled, motorI
 					</svg>
 				</div>
 			</div>
+                        </>
+			)}
 		</div>
-	);
-};
+	);};
 
 export default FrequencyResponseSection;
-
