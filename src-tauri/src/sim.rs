@@ -242,6 +242,8 @@ mod tests {
             m2_vi: 0.0,
             m1_v_last_err: 0.0,
             m2_v_last_err: 0.0,
+            m1_encoder: 0,
+            m2_encoder: 0,
             last_update: Some(Instant::now() - Duration::from_millis(200)),
             tau_m1: 0.10_f32,
             gain_m1: 100.0_f32,
