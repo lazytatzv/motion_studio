@@ -12,11 +12,11 @@ interface PositionPidParams {
   max: number;
 }
 
-interface PidSectionProps {
+interface PositionPidSectionProps {
   motorIndex: 1 | 2;
 }
 
-export function PidSection({ motorIndex }: PidSectionProps) {
+export function PositionPidSection({ motorIndex }: PositionPidSectionProps) {
   const [positionPid, setPositionPid] = useState<PositionPidParams>({
     p: 0,
     i: 0,
@@ -101,8 +101,8 @@ export function PidSection({ motorIndex }: PidSectionProps) {
           Max I:
           <input
             type="number"
-            value={pid.max_i}
-            onChange={(e) => setPid({ ...pid, max_i: parseInt(e.target.value) || 0 })}
+            value={positionPid.max_i}
+            onChange={(e) => setPositionPid({ ...positionPid, max_i: parseInt(e.target.value) || 0 })}
             className={styles.inputClass}
           />
         </label>
@@ -110,8 +110,8 @@ export function PidSection({ motorIndex }: PidSectionProps) {
           Deadzone:
           <input
             type="number"
-            value={pid.deadzone}
-            onChange={(e) => setPid({ ...pid, deadzone: parseInt(e.target.value) || 0 })}
+            value={positionPid.deadzone}
+            onChange={(e) => setPositionPid({ ...positionPid, deadzone: parseInt(e.target.value) || 0 })}
             className={styles.inputClass}
           />
         </label>
@@ -119,8 +119,8 @@ export function PidSection({ motorIndex }: PidSectionProps) {
           Min:
           <input
             type="number"
-            value={pid.min}
-            onChange={(e) => setPid({ ...pid, min: parseInt(e.target.value) || 0 })}
+            value={positionPid.min}
+            onChange={(e) => setPositionPid({ ...positionPid, min: parseInt(e.target.value) || 0 })}
             className={styles.inputClass}
           />
         </label>
