@@ -35,7 +35,7 @@ pub static ROBOCLAW: Lazy<Mutex<Option<Roboclaw>>> = Lazy::new(|| {
     };
 
     let roboclaw = Roboclaw {
-        addr: 0x80,
+        addr: 0x80, // should be configurable
         baud_rate,
         port_name,
         port,
@@ -247,6 +247,89 @@ pub fn read_speed_sync(motor_index: u8) -> Result<i32, String> {
         }
         Err(e) => { eprintln!("[DEBUG] Failed to parse! {:?}", e); Err("Invalid response".to_string()) }
     }
+}
+
+pub fn read_all_status_sync() -> Result<serde_json::Value, String> {
+    if is_simulation_enabled() {
+        let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to acquire sim lock: {}", e))?;
+        sim_update(&mut sim);
+        let v = serde_json::json!({
+            "timertick": 0u32,
+            "errors": 0u32,
+            "temp1": 0i16,
+            "temp2": 0i16,
+            "main_batt": 0i16,
+            "logic_batt": 0i16,
+            "m1_pwm": sim.m1_pwm,
+            "m2_pwm": sim.m2_pwm,
+            "m1_current": 0i16,
+            "m2_current": 0i16,
+            "m1_encoder": sim.m1_encoder,
+            "m2_encoder": sim.m2_encoder,
+            "m1_speed": sim.m1_vel.round() as i32,
+            "m2_speed": sim.m2_vel.round() as i32,
+            "m1_ispeed": 0i32,
+            "m2_ispeed": 0i32,
+            "m1_speed_err": 0i16,
+            "m2_speed_err": 0i16,
+            "m1_pos_err": 0i16,
+            "m2_pos_err": 0i16,
+        });
+        return Ok(v);
+    }
+    let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
+    let mut roboclaw = guard.as_mut().ok_or("Failed to open port")?;
+    let cmd = 73u8;
+    let mut data: Vec<u8> = Vec::new();
+    data.push(roboclaw.addr);
+    data.push(cmd);
+    let response = send_and_read(&data, &mut roboclaw)?;
+    if response.is_empty() { return Err("Empty response".into()); }
+    let result = parse_response(&response, roboclaw.addr, cmd)?;
+    if result.len() < 56 { return Err("Invalid response length for Read All Status".into()); }
+    let timertick = ((result[0] as u32) << 24) | ((result[1] as u32) << 16) | ((result[2] as u32) << 8) | (result[3] as u32);
+    let errors = ((result[4] as u32) << 24) | ((result[5] as u32) << 16) | ((result[6] as u32) << 8) | (result[7] as u32);
+    let temp1 = i16::from_be_bytes([result[8], result[9]]);
+    let temp2 = i16::from_be_bytes([result[10], result[11]]);
+    let main_batt = i16::from_be_bytes([result[12], result[13]]);
+    let logic_batt = i16::from_be_bytes([result[14], result[15]]);
+    let m1_pwm = i16::from_be_bytes([result[16], result[17]]);
+    let m2_pwm = i16::from_be_bytes([result[18], result[19]]);
+    let m1_current = i16::from_be_bytes([result[20], result[21]]);
+    let m2_current = i16::from_be_bytes([result[22], result[23]]);
+    let m1_encoder = i32::from_be_bytes([result[24], result[25], result[26], result[27]]);
+    let m2_encoder = i32::from_be_bytes([result[28], result[29], result[30], result[31]]);
+    let m1_speed = i32::from_be_bytes([result[32], result[33], result[34], result[35]]);
+    let m2_speed = i32::from_be_bytes([result[36], result[37], result[38], result[39]]);
+    let m1_ispeed = i32::from_be_bytes([result[40], result[41], result[42], result[43]]);
+    let m2_ispeed = i32::from_be_bytes([result[44], result[45], result[46], result[47]]);
+    let m1_speed_err = i16::from_be_bytes([result[48], result[49]]);
+    let m2_speed_err = i16::from_be_bytes([result[50], result[51]]);
+    let m1_pos_err = i16::from_be_bytes([result[52], result[53]]);
+    let m2_pos_err = i16::from_be_bytes([result[54], result[55]]);
+    let v = serde_json::json!({
+        "timertick": timertick,
+        "errors": errors,
+        "temp1": temp1,
+        "temp2": temp2,
+        "main_batt": main_batt,
+        "logic_batt": logic_batt,
+        "m1_pwm": m1_pwm,
+        "m2_pwm": m2_pwm,
+        "m1_current": m1_current,
+        "m2_current": m2_current,
+        "m1_encoder": m1_encoder,
+        "m2_encoder": m2_encoder,
+        "m1_speed": m1_speed,
+        "m2_speed": m2_speed,
+        "m1_ispeed": m1_ispeed,
+        "m2_ispeed": m2_ispeed,
+        "m1_speed_err": m1_speed_err,
+        "m2_speed_err": m2_speed_err,
+        "m1_pos_err": m1_pos_err,
+        "m2_pos_err": m2_pos_err,
+    });
+    Ok(v)
 }
 
 pub fn read_motor_currents_sync() -> Result<(u32, u32), String> {
@@ -595,61 +678,64 @@ pub fn set_velocity_pid_sync(motor_index: u8, params: VelocityPidParams) -> Resu
 /// Measure QPPS (Quadrature Pulses Per Second) by running the motor at full forward (speed=127)
 /// for the specified duration and sampling the encoder-reported speed.
 /// Returns the measured QPPS (integer) or an error.
-pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<i32, String> {
+pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<serde_json::Value, String> {
     if duration_ms < 200 { return Err("duration_ms must be >= 200".into()); }
-    // In simulation, drive_simply_sync and read_speed_sync already operate on sim state.
+
+    let sample_interval = 100u32; // ms
+    let mut encoder_samples: Vec<i64> = Vec::new();
+
     if is_simulation_enabled() {
-        // Save previous speed and set to max
+        // Use sim encoder counters
         let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
-        let prev = if motor_index == 1 { sim.m1_speed } else { sim.m2_speed };
+        let prev_speed = if motor_index == 1 { sim.m1_speed } else { sim.m2_speed };
+        // set to max
         if motor_index == 1 { sim.m1_speed = 127; } else { sim.m2_speed = 127; }
-        // Run a few sim updates while waiting
-        let step = 10u64; // ms
+        // wait a bit to settle and sample counts
         let mut total = 0u32;
         while total < duration_ms {
             sim_update(&mut sim);
-            std::thread::sleep(std::time::Duration::from_millis(step));
-            total += step as u32;
+            encoder_samples.push(if motor_index == 1 { sim.m1_encoder } else { sim.m2_encoder });
+            std::thread::sleep(std::time::Duration::from_millis(sample_interval as u64));
+            total += sample_interval;
         }
-        // read speed (using same conversion as device read_speed_sync)
-        let measured = if motor_index == 1 { sim.m1_vel } else { sim.m2_vel };
-        // convert measured pps to integer (round)
-        let qpps = measured.round() as i32;
-        // restore previous
-        if motor_index == 1 { sim.m1_speed = prev; } else { sim.m2_speed = prev; }
-        return Ok(qpps);
+        // restore
+        if motor_index == 1 { sim.m1_speed = prev_speed; } else { sim.m2_speed = prev_speed; }
+    } else {
+        // Real device: command full speed and sample encoder counts via Read All Status
+        drive_simply_sync(127, motor_index)?;
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut elapsed = 0u32;
+        while elapsed < duration_ms {
+            match read_all_status_sync() {
+                Ok(v) => {
+                    // v is serde_json with m1_encoder/m2_encoder
+                    if motor_index == 1 { encoder_samples.push(v.get("m1_encoder").and_then(|x| x.as_i64()).unwrap_or(0)); }
+                    else { encoder_samples.push(v.get("m2_encoder").and_then(|x| x.as_i64()).unwrap_or(0)); }
+                }
+                Err(e) => eprintln!("measure_qpps: read_all_status failed: {}", e),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(sample_interval as u64));
+            elapsed += sample_interval;
+        }
+        drive_simply_sync(64, motor_index)?; // stop
     }
 
-    // Real device: set speed to max, sample read_speed_sync periodically
-    // Save previous speed by commanding stop at the end; we don't try to read previous.
-    let sample_interval = 100u32; // ms
-    let mut samples: Vec<i32> = Vec::new();
+    if encoder_samples.len() < 2 { return Err("Not enough encoder samples".into()); }
 
-    // Apply full speed
-    drive_simply_sync(127, motor_index)?;
-    // wait initial settle
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    let mut elapsed = 0u32;
-    while elapsed < duration_ms {
-        match read_speed_sync(motor_index) {
-            Ok(s) => samples.push(s),
-            Err(e) => eprintln!("measure_qpps: read_speed failed: {}", e),
-        }
-        std::thread::sleep(std::time::Duration::from_millis(sample_interval as u64));
-        elapsed += sample_interval;
+    // compute per-interval deltas -> qpps samples
+    let mut qpps_samples: Vec<i32> = Vec::new();
+    for i in 1..encoder_samples.len() {
+        let delta = encoder_samples[i] - encoder_samples[i-1];
+        let qpps = ((delta as f64) / (sample_interval as f64 / 1000.0)).round() as i32;
+        qpps_samples.push(qpps);
     }
 
-    // Stop motor
-    drive_simply_sync(64, motor_index)?; // stop
+    // median of qpps_samples
+    qpps_samples.sort();
+    let qpps = qpps_samples[qpps_samples.len()/2];
 
-    if samples.is_empty() { return Err("No speed samples collected".into()); }
-
-    // Use median of samples (robust to transients)
-    samples.sort();
-    let mid = samples.len() / 2;
-    let qpps = samples[mid];
-    Ok(qpps)
+    let res = serde_json::json!({ "qpps": qpps, "encoder_samples": encoder_samples, "qpps_samples": qpps_samples });
+    Ok(res)
 }
 
 // Async wrappers moved to crate root (`lib.rs`) as tauri command handlers.

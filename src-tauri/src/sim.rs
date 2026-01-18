@@ -16,6 +16,10 @@ pub struct SimState {
     pub m1_vel: f32,
     pub m2_vel: f32,
 
+    // Encoder counts (cumulative pulses)
+    pub m1_encoder: i64,
+    pub m2_encoder: i64,
+
     // Stored PID params for simulation (velocity & position)
     pub m1_velocity_pid: VelocityPidParams,
     pub m2_velocity_pid: VelocityPidParams,
@@ -45,6 +49,9 @@ pub static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m2_mode_pwm: false,
     m1_vel: 0.0,
     m2_vel: 0.0,
+
+    m1_encoder: 0,
+    m2_encoder: 0,
 
     m1_velocity_pid: VelocityPidParams { p: 0x00010000, i: 0x00008000, d: 0x00004000, qpps: 44000 },
     m2_velocity_pid: VelocityPidParams { p: 0x00010000, i: 0x00008000, d: 0x00004000, qpps: 44000 },
@@ -134,6 +141,9 @@ pub fn sim_update(sim: &mut SimState) {
     for _ in 0..steps {
         sim.m1_vel += (sub_dt / tau_m1) * (m1_target - sim.m1_vel);
         sim.m2_vel += (sub_dt / tau_m2) * (m2_target - sim.m2_vel);
+        // integrate encoder counts: pulses = velocity (pps) * dt
+        sim.m1_encoder = sim.m1_encoder.wrapping_add((sim.m1_vel * sub_dt) as i64);
+        sim.m2_encoder = sim.m2_encoder.wrapping_add((sim.m2_vel * sub_dt) as i64);
     }
 
     sim.last_update = Some(now);

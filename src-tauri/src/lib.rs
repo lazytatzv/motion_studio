@@ -391,7 +391,7 @@ async fn set_velocity_pid_async(motor_index: u8, p: i32, i: i32, d: i32, qpps: i
 }
 
 #[tauri::command]
-async fn measure_qpps_async(motor_index: u8, duration_ms: Option<u32>) -> Result<i32, String> {
+async fn measure_qpps_async(motor_index: u8, duration_ms: Option<u32>) -> Result<serde_json::Value, String> {
     let dur = duration_ms.unwrap_or(2000);
     tauri::async_runtime::spawn_blocking(move || device::measure_qpps_sync(motor_index, dur)).await.map_err(|e| format!("Join error: {}", e))?
 }

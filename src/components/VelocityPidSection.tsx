@@ -115,8 +115,11 @@ export function VelocityPidSection({ motorIndex }: VelocityPidSectionProps) {
             setLoading(true);
             setError("");
             try {
-              const measured = await invoke("measure_qpps_async", { motorIndex, durationMs: 2000 }) as number;
-              setVelocityPid({ ...velocityPid, qpps: measured });
+              const measured = await invoke("measure_qpps_async", { motorIndex, durationMs: 2000 }) as any;
+              // measured: { qpps: number, encoder_samples: number[], qpps_samples: number[] }
+              setVelocityPid({ ...velocityPid, qpps: measured.qpps });
+              console.log("QPPS measured", measured);
+              alert(`Measured QPPS: ${measured.qpps}`);
             } catch (e) {
               setError(String(e));
             }
