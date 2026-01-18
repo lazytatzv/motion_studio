@@ -342,6 +342,20 @@ pub struct PositionPidParams {
     pub max: i32, // min_pos
 }
 
+impl Default for PositionPidParams {
+    fn default() -> Self {
+        PositionPidParams {
+            p: 0x00010000,
+            i: 0x00008000,
+            d: 0x00004000,
+            max_i: 0x00002000,
+            deadzone: 0,
+            min: -32767,
+            max: 32767,
+        }
+    }
+}
+
 // Struct for velocity PID parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VelocityPidParams {
@@ -351,6 +365,12 @@ pub struct VelocityPidParams {
     pub qpps: i32,
 }
 
+impl Default for VelocityPidParams {
+    fn default() -> Self {
+        VelocityPidParams { p: 0x00010000, i: 0x00008000, d: 0x00004000, qpps: 44000 }
+    }
+}
+
 /// Read RoboClaw position PID constants for the specified motor.
 /// Uses command 63 for M1 or 64 for M2.
 /// Returns: P, I, D, MaxI, Deadzone, MinPos, MaxPos (all 32-bit signed integers).
@@ -358,16 +378,9 @@ pub struct VelocityPidParams {
 pub fn read_position_pid_sync(motor_index: u8) -> Result<PositionPidParams, String> {
 
     if is_simulation_enabled() {
-        // Simulation: return default PID values
-        return Ok(PositionPidParams {
-            p: 0x00010000, // Default P // is that correct?
-            i: 0x00008000, // Default I
-            d: 0x00004000, // Default D
-            max_i: 0x00002000,
-            deadzone: 0,
-            min: -32767,
-            max: 32767,
-        });
+        // Simulation: return stored position PID from sim state
+        let sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+        if motor_index == 1 { return Ok(sim.m1_position_pid.clone()); } else { return Ok(sim.m2_position_pid.clone()); }
     }
 
     let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -422,7 +435,9 @@ pub fn read_position_pid_sync(motor_index: u8) -> Result<PositionPidParams, Stri
 pub fn set_position_pid_sync(motor_index: u8, params: PositionPidParams) -> Result<(), String> {
 
     if is_simulation_enabled() {
-        // Simulation: just return Ok
+        // Update sim stored params
+        let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+        if motor_index == 1 { sim.m1_position_pid = params; } else { sim.m2_position_pid = params; }
         return Ok(());
     }
 
@@ -480,13 +495,9 @@ pub fn set_position_pid_sync(motor_index: u8, params: PositionPidParams) -> Resu
 pub fn read_velocity_pid_sync(motor_index: u8) -> Result<VelocityPidParams, String> {
 
     if is_simulation_enabled() {
-        // Simulation: return default PID values
-        return Ok(VelocityPidParams {
-            p: 0x00010000, // Default P
-            i: 0x00008000, // Default I
-            d: 0x00004000, // Default D
-            qpps: 44000, // Default QPPS
-        });
+        // Simulation: return stored PID values from sim state
+        let sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+        if motor_index == 1 { return Ok(sim.m1_velocity_pid.clone()); } else { return Ok(sim.m2_velocity_pid.clone()); }
     }
     
     let mut guard = ROBOCLAW.lock().map_err(|e| format!("Failed to acquire lock: {}", e))?;
@@ -534,7 +545,9 @@ pub fn read_velocity_pid_sync(motor_index: u8) -> Result<VelocityPidParams, Stri
 pub fn set_velocity_pid_sync(motor_index: u8, params: VelocityPidParams) -> Result<(), String> {
 
     if is_simulation_enabled() {
-        // Simulation: just return Ok
+        // Update sim stored params
+        let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+        if motor_index == 1 { sim.m1_velocity_pid = params; } else { sim.m2_velocity_pid = params; }
         return Ok(());
     }
 

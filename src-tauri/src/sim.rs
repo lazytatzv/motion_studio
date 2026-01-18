@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 use serde_json::Value as JsonValue;
+use crate::device::{VelocityPidParams, PositionPidParams};
 
 #[derive(Default)]
 pub struct SimState {
@@ -14,6 +15,19 @@ pub struct SimState {
     pub m2_mode_pwm: bool,
     pub m1_vel: f32,
     pub m2_vel: f32,
+
+    // Stored PID params for simulation (velocity & position)
+    pub m1_velocity_pid: VelocityPidParams,
+    pub m2_velocity_pid: VelocityPidParams,
+    pub m1_position_pid: PositionPidParams,
+    pub m2_position_pid: PositionPidParams,
+
+    // Internal integrators/last errors for velocity PID
+    pub m1_vi: f32,
+    pub m2_vi: f32,
+    pub m1_v_last_err: f32,
+    pub m2_v_last_err: f32,
+
     pub last_update: Option<Instant>,
     pub tau_m1: f32,
     pub gain_m1: f32,
@@ -31,6 +45,17 @@ pub static SIM_STATE: Lazy<Mutex<SimState>> = Lazy::new(|| Mutex::new(SimState {
     m2_mode_pwm: false,
     m1_vel: 0.0,
     m2_vel: 0.0,
+
+    m1_velocity_pid: VelocityPidParams { p: 0x00010000, i: 0x00008000, d: 0x00004000, qpps: 44000 },
+    m2_velocity_pid: VelocityPidParams { p: 0x00010000, i: 0x00008000, d: 0x00004000, qpps: 44000 },
+    m1_position_pid: PositionPidParams { p: 0x00010000, i: 0x00008000, d: 0x00004000, max_i: 0x00002000, deadzone: 0, min: -32767, max: 32767 },
+    m2_position_pid: PositionPidParams { p: 0x00010000, i: 0x00008000, d: 0x00004000, max_i: 0x00002000, deadzone: 0, min: -32767, max: 32767 },
+
+    m1_vi: 0.0,
+    m2_vi: 0.0,
+    m1_v_last_err: 0.0,
+    m2_v_last_err: 0.0,
+
     last_update: None,
     tau_m1: 0.10_f32,
     gain_m1: 100.0_f32,
@@ -61,15 +86,43 @@ pub fn sim_update(sim: &mut SimState) {
 
     // 32767 is only valid for MY OWN CASE
     // TODO: I have to fix the number and make it dynamically changeable later
+    // Compute actuator command u for each motor.
     let m1_u = if sim.m1_mode_pwm {
         (sim.m1_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
     } else {
-        ((sim.m1_speed as f32 - 64.0) / 63.0).clamp(-1.0, 1.0)
+        // Use velocity PID controller to compute normalized u in speed mode
+        let params = &sim.m1_velocity_pid;
+        let set_v = ((sim.m1_speed as f32 - 64.0) / 63.0) * (params.qpps as f32);
+        let err = set_v - sim.m1_vel;
+        // PID gains are in 16.16 fixed point
+        let p = (params.p as f32) / 65536.0;
+        let i = (params.i as f32) / 65536.0;
+        let d = (params.d as f32) / 65536.0;
+        // integrate
+        sim.m1_vi += err * dt;
+        // derivative
+        let deriv = (err - sim.m1_v_last_err) / dt;
+        sim.m1_v_last_err = err;
+        // control (in pps units)
+        let control = p * err + i * sim.m1_vi + d * deriv;
+        // normalize by qpps to get -1..1 scale
+        (control / (params.qpps as f32)).clamp(-1.0, 1.0)
     };
+
     let m2_u = if sim.m2_mode_pwm {
         (sim.m2_pwm as f32 / 32767.0).clamp(-1.0, 1.0)
     } else {
-        ((sim.m2_speed as f32 - 64.0) / 63.0).clamp(-1.0, 1.0)
+        let params = &sim.m2_velocity_pid;
+        let set_v = ((sim.m2_speed as f32 - 64.0) / 63.0) * (params.qpps as f32);
+        let err = set_v - sim.m2_vel;
+        let p = (params.p as f32) / 65536.0;
+        let i = (params.i as f32) / 65536.0;
+        let d = (params.d as f32) / 65536.0;
+        sim.m2_vi += err * dt;
+        let deriv = (err - sim.m2_v_last_err) / dt;
+        sim.m2_v_last_err = err;
+        let control = p * err + i * sim.m2_vi + d * deriv;
+        (control / (params.qpps as f32)).clamp(-1.0, 1.0)
     };
 
     let m1_target = gain_m1 * m1_u;
