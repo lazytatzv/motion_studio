@@ -271,6 +271,9 @@ async fn run_frequency_response_async(
 
 // --- Command wrappers (forward to module implementations) ---
 
+
+// Don't put "pub" keyword in front of these functions;
+// That will cause multiple definition/import errors.
 #[tauri::command]
 async fn drive_simply_async(speed: u8, motor_index: u8) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || device::drive_simply_sync(speed, motor_index))
