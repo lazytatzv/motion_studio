@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
 import { styles } from "../uiStyles";
 
-interface PidParams {
+interface PositionPidParams {
   p: number;
   i: number;
   d: number;
@@ -17,7 +17,7 @@ interface PidSectionProps {
 }
 
 export function PidSection({ motorIndex }: PidSectionProps) {
-  const [pid, setPid] = useState<PidParams>({
+  const [positionPid, setPositionPid] = useState<PositionPidParams>({
     p: 0,
     i: 0,
     d: 0,
@@ -29,31 +29,31 @@ export function PidSection({ motorIndex }: PidSectionProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const readPid = async () => {
+  const readPositionPid = async () => {
     setLoading(true);
     setError("");
     try {
-      const result: PidParams = await invoke("read_position_pid_async", { motorIndex });
-      setPid(result);
+      const result: PositionPidParams = await invoke("read_position_pid_async", { motorIndex });
+      setPositionPid(result);
     } catch (e) {
       setError(e as string);
     }
     setLoading(false);
   };
 
-  const setPidValues = async () => {
+  const setPositionPidValues = async () => {
     setLoading(true);
     setError("");
     try {
       await invoke("set_position_pid_async", {
         motorIndex,
-        p: pid.p,
-        i: pid.i,
-        d: pid.d,
-        maxI: pid.max_i,
-        deadzone: pid.deadzone,
-        min: pid.min,
-        max: pid.max,
+        p: positionPid.p,
+        i: positionPid.i,
+        d: positionPid.d,
+        maxI: positionPid.max_i,
+        deadzone: positionPid.deadzone,
+        min: positionPid.min,
+        max: positionPid.max,
       });
     } catch (e) {
       setError(e as string);
@@ -62,7 +62,7 @@ export function PidSection({ motorIndex }: PidSectionProps) {
   };
 
   useEffect(() => {
-    readPid();
+    readPositionPid();
   }, [motorIndex]);
 
   return (
@@ -74,8 +74,8 @@ export function PidSection({ motorIndex }: PidSectionProps) {
           P:
           <input
             type="number"
-            value={pid.p}
-            onChange={(e) => setPid({ ...pid, p: parseInt(e.target.value) || 0 })}
+            value={positionPid.p}
+            onChange={(e) => setPositionPid({ ...positionPid, p: parseInt(e.target.value) || 0 })}
             className={styles.inputClass}
           />
         </label>
@@ -83,8 +83,8 @@ export function PidSection({ motorIndex }: PidSectionProps) {
           I:
           <input
             type="number"
-            value={pid.i}
-            onChange={(e) => setPid({ ...pid, i: parseInt(e.target.value) || 0 })}
+            value={positionPid.i}
+            onChange={(e) => setPositionPid({ ...positionPid, i: parseInt(e.target.value) || 0 })}
             className={styles.inputClass}
           />
         </label>
@@ -92,8 +92,8 @@ export function PidSection({ motorIndex }: PidSectionProps) {
           D:
           <input
             type="number"
-            value={pid.d}
-            onChange={(e) => setPid({ ...pid, d: parseInt(e.target.value) || 0 })}
+            value={positionPid.d}
+            onChange={(e) => setPositionPid({ ...positionPid, d: parseInt(e.target.value) || 0 })}
             className={styles.inputClass}
           />
         </label>
@@ -128,17 +128,17 @@ export function PidSection({ motorIndex }: PidSectionProps) {
           Max:
           <input
             type="number"
-            value={pid.max}
-            onChange={(e) => setPid({ ...pid, max: parseInt(e.target.value) || 0 })}
+            value={positionPid.max}
+            onChange={(e) => setPositionPid({ ...positionPid, max: parseInt(e.target.value) || 0 })}
             className={styles.inputClass}
           />
         </label>
       </div>
       <div className="flex gap-2 mt-4">
-        <button onClick={readPid} disabled={loading} className={styles.btnPrimary}>
+        <button onClick={readPositionPid} disabled={loading} className={styles.btnPrimary}>
           Read PID
         </button>
-        <button onClick={setPidValues} disabled={loading} className={styles.btnSecondary}>
+        <button onClick={setPositionPidValues} disabled={loading} className={styles.btnSecondary}>
           Set PID
         </button>
       </div>

@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 
 use crate::sim::{is_simulation_enabled, SIM_STATE, sim_update};
 use crate::estimators::{FrfPoint, StepSample};
-use crate::device::PidParams;
+use crate::device::{PositionPidParams, VelocityPidParams};
 
 const SIMULATED_PORT: &str = "SIMULATED";
 
@@ -369,24 +369,24 @@ async fn fit_frf_async(
 }
 
 #[tauri::command]
-async fn read_position_pid_async(motor_index: u8) -> Result<PidParams, String> {
+async fn read_position_pid_async(motor_index: u8) -> Result<PositionPidParams, String> {
     device::read_position_pid_sync(motor_index)
 }
 
 #[tauri::command]
 async fn set_position_pid_async(motor_index: u8, p: i32, i: i32, d: i32, max_i: i32, deadzone: i32, min: i32, max: i32) -> Result<(), String> {
-    let params = PidParams { p, i, d, max_i, deadzone, min, max };
+    let params = PositionPidParams { p, i, d, max_i, deadzone, min, max };
     device::set_position_pid_sync(motor_index, params)
 }
 
 #[tauri::command]
-async fn read_velocity_pid_async(motor_index: u8) -> Result<PidParams, String> {
+async fn read_velocity_pid_async(motor_index: u8) -> Result<VelocityPidParams, String> {
     device::read_velocity_pid_sync(motor_index)
 }
 
 #[tauri::command]
-async fn set_velocity_pid_async(motor_index: u8, p: i32, i: i32, d: i32, max_i: i32, deadzone: i32, min: i32, max: i32) -> Result<(), String> {
-    let params = PidParams { p, i, d, max_i, deadzone, min, max };
+async fn set_velocity_pid_async(motor_index: u8, p: i32, i: i32, d: i32, qpps: i32) -> Result<(), String> {
+    let params = VelocityPidParams { p, i, d, qpps };
     device::set_velocity_pid_sync(motor_index, params)
 }
 
