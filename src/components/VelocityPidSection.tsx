@@ -22,6 +22,7 @@ export function VelocityPidSection({ motorIndex }: VelocityPidSectionProps) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
 
   const readVelocityPid = async () => {
     setLoading(true);
@@ -58,9 +59,13 @@ export function VelocityPidSection({ motorIndex }: VelocityPidSectionProps) {
 
   return (
     <div className={styles.cardClass}>
-      <h2 className={styles.cardTitleClass}>Velocity PID Tuning - Motor {motorIndex}</h2>
-      {error && <p className={styles.bannerError}>{error}</p>}
-      <div className="grid grid-cols-2 gap-4">
+      <h2 className={`${styles.cardTitleClass} cursor-pointer`} onClick={() => setIsOpen(!isOpen)}>
+        Velocity PID Tuning - Motor {motorIndex} {isOpen ? '▼' : '▶'}
+      </h2>
+      {isOpen && (
+        <>
+          {error && <p className={styles.bannerError}>{error}</p>}
+          <div className="grid grid-cols-2 gap-4">
         <label className={styles.labelClass}>
           P:
           <input
@@ -106,6 +111,8 @@ export function VelocityPidSection({ motorIndex }: VelocityPidSectionProps) {
           Set PID
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 }

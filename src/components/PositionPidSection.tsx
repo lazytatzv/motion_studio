@@ -28,6 +28,7 @@ export function PositionPidSection({ motorIndex }: PositionPidSectionProps) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
 
   const readPositionPid = async () => {
     setLoading(true);
@@ -67,9 +68,13 @@ export function PositionPidSection({ motorIndex }: PositionPidSectionProps) {
 
   return (
     <div className={styles.cardClass}>
-      <h2 className={styles.cardTitleClass}>PID Tuning - Motor {motorIndex}</h2>
-      {error && <p className={styles.bannerError}>{error}</p>}
-      <div className="grid grid-cols-2 gap-4">
+      <h2 className={`${styles.cardTitleClass} cursor-pointer`} onClick={() => setIsOpen(!isOpen)}>
+        Position PID Tuning - Motor {motorIndex} {isOpen ? '▼' : '▶'}
+      </h2>
+      {isOpen && (
+        <>
+          {error && <p className={styles.bannerError}>{error}</p>}
+          <div className="grid grid-cols-2 gap-4">
         <label className={styles.labelClass}>
           P:
           <input
@@ -142,6 +147,8 @@ export function PositionPidSection({ motorIndex }: PositionPidSectionProps) {
           Set PID
         </button>
       </div>
+        </>
+      )}
     </div>
   );
 }
