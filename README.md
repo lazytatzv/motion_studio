@@ -7,12 +7,20 @@ Linux GUI for **Basicmicro RoboClaw motor drivers**. This is an **unofficial** c
 ![Telemetry](docs/assets/telemetry.png)
 ## Features
 
-- Drive M1/M2 with speed input
+#### Main
+
+- Drive M1/M2 with speed and pwm input
 - Stop, max CW, max CCW controls
 - Configure baud rate and serial port
 - List available serial ports
 - Read encoder speed, motor current, and PWM values
 - Reset encoders
+
+#### Experimental
+
+- Device Simulation
+- Step and frequency response sim/analysis
+- CSV output
 
 ## Install
 
@@ -26,13 +34,38 @@ yay -S roboclaw-studio-git
 paru -S roboclaw-studio-git
 ```
 
+If your installation fails, then try with `--rebuild`.
+
+```bash
+yay -S --rebuild
+# or
+paru -S --rebuild
+```
+
 Launch:
 
 ```bash
 roboclaw-studio
 ```
 
+
+### Ubuntu / Debian (Release .deb)
+
+#### Note
+
+This version is stable, but not maintained as often as AUR pkg.
+
+Download the latest `.deb` from GitHub Releases and install:
+
+```bash
+sudo apt install ./roboclaw-studio_*.deb
+```
+
 ### Ubuntu / Debian (APT repo)
+
+#### CAUTION!!
+
+This feature is exmerimental. I recommend installing this app with .deb if you use Debian-based Linux.
 
 1) Install the repo key:
 
@@ -55,13 +88,6 @@ sudo apt update
 sudo apt install roboclaw-studio
 ```
 
-### Ubuntu / Debian (Release .deb)
-
-Download the latest `.deb` from GitHub Releases and install:
-
-```bash
-sudo apt install ./roboclaw-studio_*.deb
-```
 
 ## Usage
 
@@ -76,6 +102,8 @@ ROBOCLAW_PORT=/dev/ttyACM1 roboclaw-studio
 ```
 
 However, `roboclaw-studio` can dynamically detect serial ports, so you don't need to specify the environment variable.
+
+If ports aren't detected, please confirm the permission is valid. You can write `Udev Rules` or just run `chmod` to make these accessible.
 
 ## Development
 
