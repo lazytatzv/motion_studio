@@ -317,7 +317,7 @@ export function AutotuneSection() {
 
                           // Sanity check
                           const suspicious = !isFinite(pf) || !isFinite(iflt) || Math.abs(pf) > 1000 || Math.abs(iflt) > 1000;
-                          let msg = `Current PID:\n  P=${(curP/65536).toFixed(3)} (raw ${curP}), I=${(curI/65536).toFixed(3)} (raw ${curI})\n\nSuggested PID:\n  P=${pf.toFixed(4)} (raw ${sP}), I=${iflt.toFixed(4)} (raw ${sI}), QPPS=${sQ}\n\nApply suggested PID to device?`;
+                          let msg = `Current PID:\n  P=${(curP/65536).toFixed(3)} (raw ${curP}), I=${(curI/65536).toFixed(3)} (raw ${curI}), D=${(curD/65536).toFixed(3)} (raw ${curD}), QPPS=${curQ}\n\nSuggested PID:\n  P=${pf.toFixed(4)} (raw ${sP}), I=${iflt.toFixed(4)} (raw ${sI}), D=${(sD/65536).toFixed(4)} (raw ${sD}), QPPS=${sQ}\n\nApply suggested PID to device?`;
                           if (suspicious) msg = "Warning: suggested gains are large or invalid. " + msg;
                           const ok = confirm(msg);
                           if (!ok) return;
