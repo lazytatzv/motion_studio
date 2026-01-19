@@ -22,7 +22,8 @@ Linux GUI for **Basicmicro RoboClaw motor drivers**. This is an **unofficial** c
 - Device Simulation
 - Step and frequency response simulation/analysis
 - CSV output
-- Automated PID tuning
+- Automated PID tuning (PWM Step & FRF methods; IMC PI synthesis)
+  - Note: EEPROM save is optional and may not be available for all devices; current behaviour applies suggested gains to device RAM only by default.
 - ROS2 integration
 
 ## Install

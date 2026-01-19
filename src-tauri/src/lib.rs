@@ -269,7 +269,301 @@ async fn run_frequency_response_async(
     })
     .await
     .map_err(|e| format!("Failed to join: {:?}", e))?}
+// Run an OPEN-LOOP PWM step response: apply PWM and sample measured speed via Read All Status.
+#[tauri::command]
+async fn run_pwm_step_response_async(motor_index: u8, pwm_step: i16, duration_ms: u32, sample_interval_ms: u32, apply_delay_ms: u32) -> Result<Vec<(i64, i32, i32)>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut results: Vec<(i64, i32, i32)> = Vec::new();
 
+        // Use simulation path when enabled, or when serial port isn't open (useful in tests/dev)
+        let force_sim = if is_simulation_enabled() { true } else { 
+            // If ROBOCLAW port isn't open, treat as simulated for safety/tests
+            match crate::device::ROBOCLAW.lock() {
+                Ok(guard) => guard.as_ref().map(|r| r.port.is_none()).unwrap_or(true),
+                Err(_) => true,
+            }
+        };
+        if force_sim {
+            let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+
+            // initialize
+            sim.m1_pwm = 0; sim.m2_pwm = 0; sim.m1_mode_pwm = true; sim.m2_mode_pwm = true;
+            sim.m1_vel = 0.0; sim.m2_vel = 0.0;
+            let settle = std::time::Duration::from_millis(200);
+            std::thread::sleep(settle);
+
+            let apply_delay = std::time::Duration::from_millis(apply_delay_ms as u64);
+            let start = std::time::Instant::now();
+            let step_apply_time = start + apply_delay;
+            let end_time = step_apply_time + std::time::Duration::from_millis(duration_ms as u64);
+            let sample_interval = std::time::Duration::from_millis(sample_interval_ms as u64);
+
+            let mut now = std::time::Instant::now();
+            while now <= end_time {
+                if now >= step_apply_time {
+                    if motor_index == 1 { sim.m1_pwm = pwm_step; sim.m1_mode_pwm = true; } else { sim.m2_pwm = pwm_step; sim.m2_mode_pwm = true; }
+                }
+                sim_update(&mut sim);
+                let t_rel = now.duration_since(start).as_millis() as i64;
+                let vel = if motor_index == 1 { sim.m1_vel.round() as i32 } else { sim.m2_vel.round() as i32 };
+                let cmd_now = if now >= step_apply_time { pwm_step as i32 } else { 0i32 };
+                results.push((t_rel, vel, cmd_now));
+                std::thread::sleep(sample_interval);
+                now = std::time::Instant::now();
+            }
+
+            // restore pwm to 0
+            if motor_index == 1 { sim.m1_pwm = 0; } else { sim.m2_pwm = 0; }
+            sim_update(&mut sim);
+
+            return Ok(results);
+        }
+
+        // Real device: attempt to set PWM to zero, then apply pwm_step and sample via Read All Status
+        // initial stop (if this fails, fall back to simulation path)
+        let real_drive_ok = match device::drive_pwm_sync(0, motor_index) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("[PWM STEP] device drive failed (falling back to sim): {}", e);
+                false
+            }
+        };
+
+        if !real_drive_ok {
+            // fallback to simulation-like sampling (use sim state directly)
+            let mut sim = SIM_STATE.lock().map_err(|e| format!("Failed to lock sim: {}", e))?;
+            sim.m1_pwm = 0; sim.m2_pwm = 0; sim.m1_mode_pwm = true; sim.m2_mode_pwm = true;
+            let settle = std::time::Duration::from_millis(200);
+            std::thread::sleep(settle);
+
+            let apply_delay = std::time::Duration::from_millis(apply_delay_ms as u64);
+            let start = std::time::Instant::now();
+            let step_apply_time = start + apply_delay;
+            let end_time = step_apply_time + std::time::Duration::from_millis(duration_ms as u64);
+            let sample_interval = std::time::Duration::from_millis(sample_interval_ms as u64);
+
+            let mut now = std::time::Instant::now();
+            while now <= end_time {
+                if now >= step_apply_time {
+                    if motor_index == 1 { sim.m1_pwm = pwm_step; sim.m1_mode_pwm = true; } else { sim.m2_pwm = pwm_step; sim.m2_mode_pwm = true; }
+                }
+                sim_update(&mut sim);
+                let t_rel = now.duration_since(start).as_millis() as i64;
+                let vel = if motor_index == 1 { sim.m1_vel.round() as i32 } else { sim.m2_vel.round() as i32 };
+                let cmd_now = if now >= step_apply_time { pwm_step as i32 } else { 0i32 };
+                results.push((t_rel, vel, cmd_now));
+                std::thread::sleep(sample_interval);
+                now = std::time::Instant::now();
+            }
+
+            // restore pwm to 0
+            if motor_index == 1 { sim.m1_pwm = 0; } else { sim.m2_pwm = 0; }
+            sim_update(&mut sim);
+
+            return Ok(results);
+        }
+
+        // Proceed with real device sampling
+        let settle = std::time::Duration::from_millis(200);
+        std::thread::sleep(settle);
+
+        let apply_delay = std::time::Duration::from_millis(apply_delay_ms as u64);
+        let start = std::time::Instant::now();
+        let step_apply_time = start + apply_delay;
+        let end_time = step_apply_time + std::time::Duration::from_millis(duration_ms as u64);
+        let sample_interval = std::time::Duration::from_millis(sample_interval_ms as u64);
+
+        let mut now = std::time::Instant::now();
+        let mut applied = false;
+        while now <= end_time {
+            if !applied && now >= step_apply_time {
+                device::drive_pwm_sync(pwm_step, motor_index)?;
+                applied = true;
+            }
+
+            match device::read_all_status_sync() {
+                Ok(v) => {
+                    let t_rel = now.duration_since(start).as_millis() as i64;
+                    let vel = if motor_index == 1 { v.get("m1_speed").and_then(|x| x.as_i64()).unwrap_or(0) as i32 } else { v.get("m2_speed").and_then(|x| x.as_i64()).unwrap_or(0) as i32 };
+                    let cmd_now = if applied { pwm_step as i32 } else { 0i32 };
+                    results.push((t_rel, vel, cmd_now));
+                }
+                Err(e) => eprintln!("[PWM STEP] read_all_status failed: {}", e),
+            }
+
+            std::thread::sleep(sample_interval);
+            now = std::time::Instant::now();
+        }
+
+        // stop PWM
+        device::drive_pwm_sync(0, motor_index)?;
+        Ok(results)
+    })
+    .await
+    .map_err(|e| format!("Failed to join: {:?}", e))?
+}
+
+// Autotune velocity using an OPEN-LOOP PWM step + system identification (estimate K, tau), then synthesize PI via IMC.
+#[tauri::command]
+async fn autotune_velocity_step_async(
+    motor_index: u8,
+    pwm_step: i16,
+    duration_ms: u32,
+    sample_interval_ms: u32,
+    apply_delay_ms: u32,
+    lambda_scale: Option<f64>,
+    apply_result: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    // 1) collect PWM step response (open-loop)
+    let samples_raw = run_pwm_step_response_async(motor_index, pwm_step, duration_ms, sample_interval_ms, apply_delay_ms).await?;
+
+    // Convert to StepSample for estimator
+    let mut step_samples: Vec<StepSample> = Vec::new();
+    for (t_ms, vel, cmd) in samples_raw.iter() {
+        step_samples.push(StepSample { t_ms: *t_ms as f64, vel: *vel as f64, cmd: *cmd as f64 });
+    }
+
+    // 2) estimate K (pps per pwm unit) and tau
+    let tf = estimators::estimate_tf_from_step_sync(step_samples).await?;
+    let k = tf.get("K").and_then(|v| v.as_f64()).ok_or("Estimator failed to return K")?;
+    let tau = tf.get("tau_s").and_then(|v| v.as_f64()).ok_or("Estimator failed to return tau_s")?;
+
+    // 3) read current velocity PID qpps (used to normalize controller output)
+    let velpid = device::read_velocity_pid_sync(motor_index)?;
+    let qpps = velpid.qpps as f64;
+
+    // Convert k (pps per pwm unit) to pps per normalized u (-1..1)
+    let k_per_u = k * 32767.0_f64; // pps per normalized control (u)
+
+    if k_per_u.abs() < 1e-9 { return Err("Estimated plant gain too small".into()); }
+
+    // effective plant for controller (maps control output [pps] -> vel [pps]) has DC gain K_eff = k_per_u / qpps
+    let k_eff = k_per_u / qpps;
+
+    // 4) IMC tuning: lambda = lambda_scale * tau (default 0.5)
+    let scale = lambda_scale.unwrap_or(0.5_f64).max(0.05).min(5.0);
+    let lambda = scale * tau;
+    if lambda <= 0.0 { return Err("Invalid lambda computed".into()); }
+
+    // For first order plant G_eff = K_eff/(tau s + 1), IMC PI: Kc = tau / (K_eff * lambda), Ti = tau
+    let kc = tau / (k_eff * lambda);
+    let ti = tau;
+    let kp_float = kc;
+    let ki_float = if ti.abs() > 1e-12 { kc / ti } else { 0.0 };
+    let kd_float = 0.0_f64;
+
+    // Convert to device fixed point (16.16)
+    let kp_fixed = (kp_float * 65536.0).round() as i32;
+    let ki_fixed = (ki_float * 65536.0).round() as i32;
+    let kd_fixed = (kd_float * 65536.0).round() as i32;
+
+    let suggested = crate::device::VelocityPidParams { p: kp_fixed, i: ki_fixed, d: kd_fixed, qpps: velpid.qpps };
+
+    // Optionally apply the suggested gains to the device
+    let applied = if apply_result.unwrap_or(false) {
+        match device::set_velocity_pid_sync(motor_index, suggested.clone()) {
+            Ok(()) => true,
+            Err(e) => return Err(format!("Failed to apply PID to device: {}", e)),
+        }
+    } else { false };
+
+    // Package results (include raw samples for UI plotting)
+    let samples_json: Vec<serde_json::Value> = samples_raw.iter().map(|(t, vel, cmd)| serde_json::json!({"t_ms": t, "vel": vel, "cmd": cmd})).collect();
+
+    let res = serde_json::json!({
+        "estimator": tf,
+        "k_per_u": k_per_u,
+        "k_eff": k_eff,
+        "lambda_s": lambda,
+        "suggested_pid": { "p": kp_fixed, "i": ki_fixed, "d": kd_fixed, "qpps": velpid.qpps },
+        "samples": samples_json,
+        "applied": applied,
+    });
+
+    Ok(res)
+}
+
+// Autotune velocity using Frequency Response data and FRF fitting, then synthesize PI via IMC.
+#[tauri::command]
+async fn autotune_velocity_frf_async(
+    motor_index: u8,
+    start_hz: f64,
+    end_hz: f64,
+    points: u32,
+    amplitude_cmd: f32,
+    cycles: u32,
+    sample_interval_ms: u32,
+    tau_min: f64,
+    tau_max: f64,
+    tau_points: u32,
+    lambda_scale: Option<f64>,
+    apply_result: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    // 1) run frequency response
+    let frf = run_frequency_response_async(motor_index, start_hz, end_hz, points, amplitude_cmd, cycles, sample_interval_ms).await?;
+
+    // Extract vectors
+    let mut freqs: Vec<f64> = Vec::new();
+    let mut mags: Vec<f64> = Vec::new();
+    let mut phases: Vec<f64> = Vec::new();
+    for p in frf.iter() {
+        freqs.push(p.freq_hz);
+        mags.push(p.gain);
+        phases.push(p.phase_deg);
+    }
+
+    // 2) fit FRF to first-order model: returns K (complex) and tau
+    let fit = estimators::fit_frf_sync(freqs.clone(), mags.clone(), phases.clone(), tau_min, tau_max, tau_points).await?;
+    let k_mag = fit.get("K_mag").and_then(|v| v.as_f64()).ok_or("fit failed to return K_mag")?;
+    let tau = fit.get("tau_s").and_then(|v| v.as_f64()).ok_or("fit failed to return tau_s")?;
+
+    // 3) read current velocity PID qpps
+    let velpid = device::read_velocity_pid_sync(motor_index)?;
+    let qpps = velpid.qpps as f64;
+
+    // Convert gain to pps per normalized u (-1..1)
+    // For FRF, magnitude is in output per input (where input for device is command units), so scale by 32767
+    let k_per_u = k_mag * 32767.0_f64;
+    if k_per_u.abs() < 1e-9 { return Err("Estimated plant gain too small".into()); }
+    let k_eff = k_per_u / qpps;
+
+    // 4) IMC tuning
+    let scale = lambda_scale.unwrap_or(0.5_f64).max(0.05).min(5.0);
+    let lambda = scale * tau;
+    if lambda <= 0.0 { return Err("Invalid lambda computed".into()); }
+    let kc = tau / (k_eff * lambda);
+    let ti = tau;
+    let kp_float = kc;
+    let ki_float = if ti.abs() > 1e-12 { kc / ti } else { 0.0 };
+    let kd_float = 0.0_f64;
+
+    let kp_fixed = (kp_float * 65536.0).round() as i32;
+    let ki_fixed = (ki_float * 65536.0).round() as i32;
+    let kd_fixed = (kd_float * 65536.0).round() as i32;
+
+    let suggested = crate::device::VelocityPidParams { p: kp_fixed, i: ki_fixed, d: kd_fixed, qpps: velpid.qpps };
+
+    let applied = if apply_result.unwrap_or(false) {
+        match device::set_velocity_pid_sync(motor_index, suggested.clone()) {
+            Ok(()) => true,
+            Err(e) => return Err(format!("Failed to apply PID to device: {}", e)),
+        }
+    } else { false };
+
+    let res = serde_json::json!({
+        "fit": fit,
+        "k_mag": k_mag,
+        "tau_s": tau,
+        "k_per_u": k_per_u,
+        "k_eff": k_eff,
+        "lambda_s": lambda,
+        "suggested_pid": { "p": kp_fixed, "i": ki_fixed, "d": kd_fixed, "qpps": velpid.qpps },
+        "frf": frf,
+        "applied": applied,
+    });
+
+    Ok(res)
+}
 // --- Command wrappers (forward to module implementations) ---
 
 
@@ -391,6 +685,13 @@ async fn set_velocity_pid_async(motor_index: u8, p: i32, i: i32, d: i32, qpps: i
 }
 
 #[tauri::command]
+async fn write_velocity_pid_eeprom_async(motor_index: u8) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || device::write_velocity_pid_eeprom_sync(motor_index))
+        .await
+        .map_err(|e| format!("Failed to join: {:?}", e))?
+}
+
+#[tauri::command]
 async fn measure_qpps_async(motor_index: u8, duration_ms: Option<u32>) -> Result<serde_json::Value, String> {
     let dur = duration_ms.unwrap_or(2000);
     tauri::async_runtime::spawn_blocking(move || device::measure_qpps_sync(motor_index, dur)).await.map_err(|e| format!("Join error: {}", e))?
@@ -422,6 +723,8 @@ pub fn run() {
             set_position_pid_async,
             read_velocity_pid_async,
             set_velocity_pid_async,
+            run_pwm_step_response_async,
+            autotune_velocity_step_async,
             measure_qpps_async,
         ])
         .run(tauri::generate_context!())

@@ -221,6 +221,10 @@ pub fn set_sim_params_js_sync(params: JsonValue) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+
+    static TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     #[test]
     fn velocity_pid_changes_response() {
@@ -250,6 +254,8 @@ mod tests {
             gain_m2: 100.0_f32,
         };
 
+        let _guard = TEST_MUTEX.lock().unwrap();
+
         // Set PWM to max forward and enable PWM mode
         sim.m1_pwm = 32767;
         sim.m1_mode_pwm = true;
@@ -276,6 +282,8 @@ mod tests {
         sim.m1_mode_pwm = false;
         sim.last_update = Some(Instant::now() - Duration::from_millis(200));
 
+        let _guard = TEST_MUTEX.lock().unwrap();
+
         // Enable simulation mode for the duration of this test
         set_simulation_mode_sync(true).expect("enable sim");
         // call measure function via device.measure_qpps_sync (simulation path)
@@ -288,5 +296,47 @@ mod tests {
         // The first encoder sample should be zero since we reset before measurement
         let encs = res.get("encoder_samples").and_then(|v| v.as_array()).expect("encoder_samples array");
         assert!(encs[0].as_i64().unwrap_or(-1) == 0);
+    }
+
+    #[test]
+    fn autotune_step_sim() {
+        // Enable simulation and set plant params
+        set_simulation_mode_sync(true).unwrap();
+        set_sim_params_sync(1, 0.10, 100.0).unwrap();
+
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        // Ensure ROBOCLAW port is None to force simulated behavior in concurrent tests
+        let mut guard = crate::device::ROBOCLAW.lock().unwrap();
+        if let Some(rc) = guard.as_mut() { rc.port = None; }
+
+        // Run autotune (blocking call to the async command)
+        let res = tauri::async_runtime::block_on(crate::autotune_velocity_step_async(1, 16000, 2000, 100, 50, Some(0.5), Some(false)));
+        assert!(res.is_ok(), "autotune returned error: {:?}", res.err());
+        let v = res.unwrap();
+        assert!(v.get("suggested_pid").is_some(), "missing suggested_pid");
+        let sp = v.get("suggested_pid").unwrap();
+        let p = sp.get("p").and_then(|x| x.as_i64()).unwrap_or(0);
+        let i = sp.get("i").and_then(|x| x.as_i64()).unwrap_or(0);
+        assert!(p != 0 || i != 0, "suggested gains appear zero");
+    }
+
+    #[test]
+    fn autotune_frf_sim() {
+        // Enable simulation and set plant params
+        set_simulation_mode_sync(true).unwrap();
+        set_sim_params_sync(1, 0.10, 100.0).unwrap();
+
+        let _guard = TEST_MUTEX.lock().unwrap();
+
+        // Ensure ROBOCLAW port None
+        let mut guard = crate::device::ROBOCLAW.lock().unwrap();
+        if let Some(rc) = guard.as_mut() { rc.port = None; }
+
+        // Run FRF autotune (blocking)
+        let res = tauri::async_runtime::block_on(crate::autotune_velocity_frf_async(1, 0.5, 20.0, 8, 20.0, 3, 100, 0.001, 2.0, 30, Some(0.5), Some(false)));
+        assert!(res.is_ok(), "autotune frf returned error: {:?}", res.err());
+        let v = res.unwrap();
+        assert!(v.get("suggested_pid").is_some(), "missing suggested_pid");
     }
 }

@@ -9,6 +9,7 @@ import { StepResponseSection } from "./components/StepResponseSection";
 import FrequencyResponseSection from "./components/FrequencyResponseSection";
 import { PositionPidSection } from "./components/PositionPidSection";
 import { VelocityPidSection } from "./components/VelocityPidSection";
+import { AutotuneSection } from "./components/AutotuneSection";
 import { styles } from "./uiStyles";
 
 const SPEED_MIN = 0;
@@ -553,6 +554,8 @@ function App() {
 
       <VelocityPidSection motorIndex={1} />
       <VelocityPidSection motorIndex={2} />
+
+      <AutotuneSection />
 
       <TelemetrySection
         velM1={velM1}

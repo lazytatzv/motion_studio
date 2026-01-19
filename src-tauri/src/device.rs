@@ -745,3 +745,9 @@ pub fn measure_qpps_sync(motor_index: u8, duration_ms: u32) -> Result<serde_json
 }
 
 // Async wrappers moved to crate root (`lib.rs`) as tauri command handlers.
+
+// Stub: write current velocity PID to EEPROM (not implemented on device yet)
+pub fn write_velocity_pid_eeprom_sync(_motor_index: u8) -> Result<(), String> {
+    // RoboClaw EEPROM write command is not implemented here; return explicit error for now
+    Err("EEPROM write not implemented".into())
+}
